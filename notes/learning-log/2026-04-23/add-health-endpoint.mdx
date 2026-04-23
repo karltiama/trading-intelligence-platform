@@ -1,0 +1,85 @@
+---
+title: Add NestJS health endpoint
+date: 2026-04-23
+tags: [nestjs, health-check, api]
+---
+
+## Context
+
+The API scaffold was running but lacked a dedicated operational health endpoint. We needed a lightweight, production-minded check route that can be used by local dev, CI smoke checks, and future platform probes.
+
+## Goal
+
+Add a simple `GET /health` endpoint in `apps/api` using standard NestJS module/controller/service layering.
+
+## Files Changed
+
+- `apps/api/src/health/health.service.ts`
+- `apps/api/src/health/health.controller.ts`
+- `apps/api/src/health/health.module.ts`
+- `apps/api/src/app.module.ts`
+- `notes/learning-log/2026-04-23/add-health-endpoint.mdx`
+
+## Implementation Notes (key logic explained)
+
+- Added `HealthService` returning a minimal JSON payload:
+  - `status: "ok"`
+  - `service: "api"`
+  - `timestamp: ISO8601 string`
+- Added `HealthController` with route prefix `health` and `@Get()` handler.
+- Added `HealthModule` to encapsulate health controller/service.
+- Imported `HealthModule` in `AppModule` to expose `/health` endpoint.
+- Kept implementation intentionally small and dependency-free.
+
+## Key Decisions (and alternatives considered)
+
+- **Decision:** Return static operational fields + timestamp.
+  - **Why:** Fast and reliable liveness/readiness signal without external dependency checks.
+  - **Alternative:** Add DB/broker dependency probes immediately (rejected for MVP simplicity and startup speed).
+- **Decision:** Use dedicated module (`health`) instead of putting route in `AppController`.
+  - **Why:** Clean standard Nest structure and future extensibility.
+  - **Alternative:** Add `/health` in `AppController` (rejected as less maintainable as app grows).
+
+## Assumptions
+
+- Current need is process-level health, not deep dependency readiness.
+- Port defaults are already adjusted so API can run locally on `3001` when frontend is on `3000`.
+
+## Failure Modes
+
+- If the app process is up but dependencies are down, `/health` still returns ok (by design).
+- If API port changes unexpectedly, probe target URL must be updated.
+
+## How to Test (commands + steps)
+
+```bash
+cd apps/api
+npm run build
+npm run lint
+npm run test
+npm run start
+```
+
+Then in another terminal:
+
+```bash
+curl http://localhost:3001/health
+```
+
+Expected:
+- HTTP 200
+- JSON with `status`, `service`, `timestamp`
+
+## Next Steps
+
+1. Add `/health/readiness` later with optional DB check once Prisma is integrated.
+2. Add e2e test for `/health` endpoint.
+3. Wire health endpoint into deployment probe configs when infra is added.
+
+## Verification Checklist
+
+- [ ] `GET /health` returns HTTP 200.
+- [ ] Response body includes `status: "ok"`.
+- [ ] Response body includes `service: "api"`.
+- [ ] Response body includes a valid ISO timestamp.
+- [ ] `npm run build`, `npm run lint`, and `npm run test` pass in `apps/api`.

@@ -1,0 +1,81 @@
+---
+title: Set API default port to 3001
+date: 2026-04-23
+tags: [nestjs, api, ports, lint]
+---
+
+## Context
+
+The frontend Next.js dev server uses port `3000` by default, which conflicted with the NestJS API also defaulting to `3000`. Starting both services caused `EADDRINUSE` for the API.
+
+## Goal
+
+Make the API startup port production-minded and conflict-free for local monorepo development while keeping env override support.
+
+## Files Changed
+
+- `apps/api/src/main.ts`
+- `notes/learning-log/2026-04-23/api-default-port-to-3001.mdx`
+
+## Implementation Notes (key logic explained)
+
+- Updated API listen fallback:
+  - from: `process.env.PORT ?? 3000`
+  - to: `process.env.PORT ?? 3001`
+- Updated bootstrap invocation:
+  - from: `bootstrap();`
+  - to: `void bootstrap();`
+- The `void` marker intentionally resolves the `@typescript-eslint/no-floating-promises` warning while preserving startup behavior.
+
+## Key Decisions (and alternatives considered)
+
+- **Decision:** Use `3001` as default API port.
+  - **Why:** Avoid collision with Next.js default `3000` in local dev.
+  - **Alternative:** Keep API on `3000` and move frontend to another port (less conventional for Next).
+- **Decision:** Keep env-based port override (`process.env.PORT`).
+  - **Why:** Deployment platforms usually inject `PORT`.
+  - **Alternative:** Hardcode `3001` always (rejected as less deploy-friendly).
+
+## Assumptions
+
+- You run frontend and backend concurrently in local development.
+- Production environment may provide a `PORT` variable.
+
+## Failure Modes
+
+- If another process already uses `3001`, API will still fail until `PORT` is set explicitly.
+- If orchestration scripts assume `3000` for API, they must be updated.
+
+## How to Test (commands + steps)
+
+```bash
+cd apps/api
+npm run lint
+npm run start
+```
+
+Expected:
+- lint passes without floating-promise warning
+- API starts on `3001` when `PORT` is not set
+
+Optional override test:
+
+```bash
+# PowerShell
+$env:PORT=4000; npm run start
+```
+
+Expected: API starts on `4000`.
+
+## Next Steps
+
+1. Add root scripts for easy dual startup (`dev:web`, `dev:api`).
+2. Add `/health` endpoint in `health` module and verify on `http://localhost:3001/health`.
+3. Add `.env.example` documenting API port conventions.
+
+## Verification Checklist
+
+- [ ] `apps/api/src/main.ts` defaults to `process.env.PORT ?? 3001`.
+- [ ] `apps/api/src/main.ts` uses `void bootstrap();`.
+- [ ] `npm run lint` passes in `apps/api`.
+- [ ] `npm run start` works while frontend occupies `3000`.
