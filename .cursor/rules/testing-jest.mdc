@@ -1,0 +1,44 @@
+---
+description: Testing discipline with Jest
+globs: **/*.spec.ts,**/*.test.ts,**/*.spec.tsx,**/*.test.tsx,tests/**/*
+alwaysApply: false
+---
+
+# Testing with Jest
+
+## What to Test
+- **Unit tests**: services, domain logic, pure functions. Mock the repository and external ports.
+- **Integration tests**: controllers + real Prisma against a disposable test DB (Neon branch or local Postgres).
+- Do not test the framework (Nest DI wiring, Next routing). Trust it.
+
+## Structure
+- Arrange / Act / Assert, separated by blank lines.
+- One behavior per `it(...)`. The name reads as a sentence:
+  `it('rejects a buy order when cash balance is insufficient')`.
+- `describe` names the unit under test, not the file.
+
+## Mocking
+- Mock at **boundaries**: repository, HTTP client, clock, `BrokerPort`. Never mock internals of the unit under test.
+- Inject a fake clock and id generator — do not stub `Date.now` or `crypto.randomUUID` globally.
+
+## Test Data
+- Use factory functions (`makeOrder(overrides)`) over static fixtures.
+- Each test creates its own data. No shared mutable state between tests.
+
+## Example
+
+```ts
+it('reserves cash when a buy order is placed', async () => {
+  const repo = inMemoryOrderRepo();
+  const service = new OrdersService(repo, paperBroker(), fixedClock('2026-04-23'));
+
+  const order = await service.place(makeBuyOrder({ qty: 10, price: 100 }));
+
+  expect(repo.find(order.id)?.status).toBe('reserved');
+});
+```
+
+## Don't
+- No snapshot tests for business logic. Assert on meaningful fields.
+- No `expect(true).toBe(true)` placeholders — delete or mark `it.todo(...)`.
+- No network calls, no real broker calls, no real clocks in unit tests.

@@ -1,0 +1,55 @@
+---
+description: NestJS backend conventions for apps/api
+globs: apps/api/**/*.ts
+alwaysApply: false
+---
+
+# NestJS Backend Conventions
+
+## Module Layout
+One feature folder per module:
+
+```
+apps/api/src/orders/
+  orders.module.ts
+  orders.controller.ts
+  orders.service.ts
+  orders.repository.ts
+  dto/
+  domain/           # plain types + invariants, framework-free
+```
+
+- **Controllers**: thin. Parse input, delegate to the service, shape the response. No business rules.
+- **Services**: own the use case. No `@Req` / `@Res`. Return domain types, not Prisma rows.
+- **Repositories**: the ONLY place allowed to import `PrismaService`.
+
+## DTOs & Validation
+- Every request body/query/param is a DTO class with `class-validator` decorators.
+- `ValidationPipe` is global with `{ whitelist: true, forbidNonWhitelisted: true, transform: true }`.
+- Never pass raw `req.body` or `any` into a service.
+
+## Errors
+- Throw `HttpException` subclasses (`BadRequestException`, `NotFoundException`, `ConflictException`). Never `res.status().json()`.
+- Domain errors extend a base `DomainError`; a single exception filter maps them to HTTP.
+- Never swallow errors. Log with context, then rethrow or translate.
+
+## Example
+
+```ts
+// ❌ BAD — Prisma + business logic in the controller
+@Post()
+create(@Body() body: any) {
+  return this.prisma.order.create({ data: body });
+}
+
+// ✅ GOOD
+@Post()
+create(@Body() dto: CreateOrderDto): Promise<OrderDto> {
+  return this.orders.place(dto);
+}
+```
+
+## Don't
+- No cross-feature imports of private providers. If two modules need it, promote it to a shared module.
+- No singletons via module-level `const`. Use DI.
+- No logging with `console.*`. Use the Nest `Logger`.

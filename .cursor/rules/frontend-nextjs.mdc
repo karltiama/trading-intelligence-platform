@@ -1,0 +1,42 @@
+---
+description: Next.js frontend conventions for apps/web
+globs: apps/web/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# Next.js Frontend Conventions
+
+## Server vs Client Components
+- Default to Server Components. Add `"use client"` only when the file needs state, effects, refs, or browser APIs.
+- Keep client components small and leaf-like. Fetch on the server; pass data down as props.
+
+## Data Fetching
+- The frontend talks to `apps/api` via the typed client at `apps/web/src/lib/api.ts`. No direct Prisma, no direct DB.
+- Read the API base URL from env (`API_URL` on server, `NEXT_PUBLIC_API_URL` on client). Never hardcode URLs.
+- Server Components `await` the API client directly. Client Components use React Query (or SWR) — pick one and stick to it.
+
+## Component Rules
+- Components render. They do not own business rules (position sizing, P&L math, order validation). Those live in the backend.
+- Formatting (currency, dates, percentages) lives in `apps/web/src/lib/format.ts` — one source of truth.
+- No deep-tree `fetch` calls. Colocate data loading near the route segment (`page.tsx` / `layout.tsx`).
+
+## State
+- URL state (filters, selected tab, symbol) goes in search params.
+- Server state: React Query / SWR. No duplicating it into a global store.
+- Local UI state: `useState`. No Redux / Zustand until a concrete need appears.
+
+## Example
+
+```tsx
+// ✅ Server Component fetches once; client chart stays lean
+// app/(dashboard)/portfolio/page.tsx
+export default async function PortfolioPage() {
+  const positions = await api.portfolio.list();
+  return <PositionsTable positions={positions} />;
+}
+```
+
+## Don't
+- No `any` on API responses. Import the shared types or generated client.
+- No business logic "ported" from the backend for speed. Ask the API.
+- No `process.env.X` sprinkled through components. Centralize in `apps/web/src/lib/env.ts`.

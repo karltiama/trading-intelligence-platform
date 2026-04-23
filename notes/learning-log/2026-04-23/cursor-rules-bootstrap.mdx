@@ -1,0 +1,96 @@
+---
+title: Cursor Rules Bootstrap for Trading Intelligence Platform
+date: 2026-04-23
+tags: [cursor, rules, tooling, architecture]
+---
+
+## Context
+
+Day zero of the Trading Intelligence Platform. Stack: Next.js (`apps/web`), NestJS (`apps/api`), Prisma + Neon Postgres, Jest, Alpaca later behind a port. Before writing any feature code, we set up Cursor Rules so the AI assistant has persistent guardrails that match our architecture and MVP phase.
+
+## Goal
+
+Create a **small, high-signal set of Cursor Rules** (not 20) that enforce:
+- architecture boundaries between web/api/data,
+- NestJS + Prisma conventions,
+- testing discipline,
+- MVP simplicity (paper trading first, no premature infra).
+
+## Files Changed
+
+```
+.cursor/rules/00-project-principles.mdc    (new, alwaysApply)
+.cursor/rules/backend-nestjs.mdc           (new, apps/api/**)
+.cursor/rules/prisma-data.mdc              (new, prisma/** + *.repository.ts)
+.cursor/rules/frontend-nextjs.mdc          (new, apps/web/**)
+.cursor/rules/testing-jest.mdc             (new, **/*.{spec,test}.{ts,tsx} + tests/**)
+```
+
+## Implementation Notes
+
+- **One always-on rule, four scoped rules.** Only `00-project-principles.mdc` uses `alwaysApply: true` — it encodes project DNA (boundaries, money as Decimal, UTC, MVP phase). The other four are activated by `globs`, so context stays relevant and cheap.
+- **Globs are tight on purpose.** The Prisma rule matches `prisma/**/*` AND `apps/api/**/*.repository.ts` — that way schema work and repository edits both get it, but a service file doesn't unless it actually imports Prisma (which our principles forbid anyway).
+- **No duplicated advice.** Money rule lives only in principles. "No business logic in X" is stated once per layer (controllers, components) where it's inverted, not repeated. `no any` is in principles; each scoped rule tightens it contextually.
+- **Concrete examples > prose.** Every rule file has at least one ❌/✅ TS example, because the skill docs emphasize examples and they're what the model actually generalizes from.
+- **Alpaca behind a port.** Encoded in principles, not in its own rule — it's a current-phase decision, not a long-lived coding standard. When Alpaca lands, we may add a `integrations-broker.mdc` scoped to `apps/api/src/brokers/**`.
+
+## Key Decisions (and alternatives considered)
+
+| Decision | Why | Alternative rejected |
+|---|---|---|
+| **5 rules, not more** | Solo dev; each extra rule is context tax and a maintenance burden | "One rule per theme" (≈10) — too much overlap, noise on every request |
+| **`alwaysApply` only for principles** | Project DNA must never be forgotten | Make backend/frontend rules always-on — pollutes the other side's context |
+| **Prisma scoped by glob, not module name** | Keeps Prisma knowledge out of UI work | Make it alwaysApply — would bias frontend suggestions toward server thinking |
+| **Repositories own all Prisma access** | Clean boundary, testable services | Let services call Prisma directly — fast now, painful at the first refactor |
+| **`BrokerPort` with `PaperBroker` first** | Defers Alpaca risk; makes testing trivial | Integrate Alpaca immediately — violates MVP phase discipline |
+| **Decimal for money, UTC for time** | Non-negotiable for a trading app | Floats + local time — source of the worst class of bugs in finance |
+
+## Assumptions
+
+- Monorepo layout will be `apps/web`, `apps/api`, `prisma/`, optionally `packages/contracts`. If you go single-repo (no `apps/` prefix), every `globs` entry needs updating — a 5-minute edit.
+- Jest is used on both sides (Next + Nest). If you pick Vitest for the frontend later, extend the testing rule's `globs` or split it.
+- `class-validator` + `ValidationPipe` is the validation stack. If you switch to `zod` DTOs, update `backend-nestjs.mdc` — the principle (validate at the boundary) stays.
+
+## Failure Modes
+
+- **Globs mismatch the actual tree.** If folders end up at `frontend/` / `backend/` instead of `apps/web` / `apps/api`, rules silently don't activate. Verify by opening a backend file and checking Cursor's active-rules indicator.
+- **Rules go stale.** When architecture evolves (e.g. you add a queue or a worker app), the principles rule will conflict. Treat rules as living docs — edit them in the same PR that changes the architecture.
+- **Over-scoped `alwaysApply`.** Resist adding `alwaysApply: true` to more rules. If you feel the urge, the content probably belongs in `00-project-principles.mdc`.
+
+## How to Test
+
+```bash
+# 1. Verify the files exist and are valid MDC
+ls .cursor/rules
+# Expect 5 .mdc files.
+
+# 2. In Cursor, open a throwaway file to confirm activation:
+#    - Open apps/api/src/app.module.ts (once it exists) → backend-nestjs should activate.
+#    - Open apps/web/src/app/page.tsx → frontend-nextjs should activate.
+#    - Open prisma/schema.prisma → prisma-data should activate.
+#    - Open anything → 00-project-principles is always active.
+
+# 3. Sanity prompt:
+#    Ask the agent: "Create a new Orders feature in apps/api."
+#    Expect: module + controller + service + repository layout, DTO with class-validator,
+#            no Prisma in controller, Decimal for price fields. If any is missing, the rule
+#            isn't landing — check globs and alwaysApply.
+```
+
+## Verification Checklist
+
+- [ ] All 5 files present under `.cursor/rules/` with `.mdc` extension.
+- [ ] Each file's frontmatter has `description`; scoped files have `globs`; only `00-project-principles.mdc` has `alwaysApply: true`.
+- [ ] Opening `apps/api/**/*.ts` shows `backend-nestjs` as active in Cursor's rules panel.
+- [ ] Opening `apps/web/**/*.{ts,tsx}` shows `frontend-nextjs` as active.
+- [ ] Opening `prisma/schema.prisma` shows `prisma-data` as active.
+- [ ] A sample prompt ("scaffold a feature") produces code consistent with the rules (layered modules, Decimal money, DTOs, paper-broker).
+- [ ] No rule exceeds ~50 lines; each rule has at least one concrete code example.
+
+## Next Steps
+
+1. Scaffold the monorepo skeleton (`pnpm` workspaces or `turborepo`) so the globs have real files to attach to.
+2. Initialize `apps/api` (NestJS CLI) and `apps/web` (Next.js app router) with minimal smoke tests.
+3. Add `prisma/schema.prisma` with a single `User` model, run first migration against a Neon branch.
+4. Define `BrokerPort` interface + `PaperBroker` stub in `apps/api/src/brokers/` as the first real feature — it's the architectural spine of the whole project.
+5. Revisit these rules after the first real feature ships. Delete or sharpen anything that didn't actually help.

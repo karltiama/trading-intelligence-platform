@@ -1,0 +1,43 @@
+---
+description: Prisma schema, migration, and data-access rules
+globs: prisma/**/*,apps/api/**/*.repository.ts,apps/api/**/prisma*.ts
+alwaysApply: false
+---
+
+# Prisma & Data Layer
+
+## Schema Conventions
+- Models are `PascalCase`, singular: `Order`, not `orders`.
+- Fields are `camelCase`. Use `@map` / `@@map` to keep the DB `snake_case`.
+- Every foreign key has an index unless it is already part of the primary key:
+  ```prisma
+  @@index([userId])
+  ```
+- IDs: `@id @default(cuid())` by default. Use `uuid` or `autoincrement` only with a stated reason.
+- Money: `Decimal @db.Decimal(18, 8)`. Never `Float`, never `Int` for fractional currency.
+- Every persisted entity has `createdAt DateTime @default(now())` and `updatedAt DateTime @updatedAt`.
+
+## Migrations
+- One logical change per migration. Name: `YYYYMMDDHHMM_short_snake_case_summary`.
+- Never edit an already-applied migration — create a new one.
+- Destructive changes (`DROP`, rename) go in their own migration with a header comment explaining the safe-rollout plan.
+
+## Access Rules
+- `PrismaService` is only injected into `*.repository.ts` files.
+- Repositories return **domain types**, not `Prisma.<Model>GetPayload<...>`. Map at the boundary.
+- No `$queryRaw` unless there is a measured performance or capability reason, documented in a comment above the call.
+
+## Example
+
+```ts
+// ✅ Repository maps to a domain type at the boundary
+async findById(id: string): Promise<Order | null> {
+  const row = await this.prisma.order.findUnique({ where: { id } });
+  return row ? toOrder(row) : null;
+}
+```
+
+## Don't
+- Don't export Prisma-generated types from a module's public API.
+- Don't call `prisma` from a service or controller — go through the repository.
+- Don't seed production data from migration files; use a separate `prisma/seed.ts` guarded by env.

@@ -1,0 +1,42 @@
+# OS/editor
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# Node dependencies
+node_modules/
+**/node_modules/
+
+# Build outputs
+dist/
+**/dist/
+build/
+**/build/
+out/
+**/out/
+.next/
+**/.next/
+coverage/
+**/coverage/
+*.tsbuildinfo
+
+# Tool caches
+.turbo/
+.cache/
+
+# Keep project-specific Cursor rules, ignore local Cursor state
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
+

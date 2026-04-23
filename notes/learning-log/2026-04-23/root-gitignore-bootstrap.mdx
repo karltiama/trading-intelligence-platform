@@ -1,0 +1,72 @@
+---
+title: Root gitignore for monorepo baseline
+date: 2026-04-23
+tags: [git, monorepo, hygiene]
+---
+
+## Context
+
+Before the first commit, the repository needed a root-level `.gitignore` to prevent committing generated artifacts from both `apps/web` (Next.js) and `apps/api` (NestJS).
+
+## Goal
+
+Add one high-signal root `.gitignore` that ignores build/cache/dependency outputs while keeping source, docs, and project rules.
+
+## Files Changed
+
+- `.gitignore`
+- `notes/learning-log/2026-04-23/root-gitignore-bootstrap.mdx`
+
+## Implementation Notes (key logic explained)
+
+- Added root ignore rules for:
+  - `node_modules`, `dist`, `build`, `out`, `.next`, `coverage`, `*.tsbuildinfo`
+  - log files and local env files (`.env*`, except `.env.example`)
+  - common tool caches (`.turbo`, `.cache`)
+- Added `.cursor` rule that ignores local editor state while explicitly keeping shared rules:
+  - ignore: `.cursor/*`
+  - keep: `!.cursor/rules/` and `!.cursor/rules/**`
+- Verified ignore behavior with `git check-ignore` against real paths in both apps.
+
+## Key Decisions (and alternatives considered)
+
+- **Decision:** Use one root `.gitignore`.
+  - **Why:** Clear monorepo baseline and less duplication.
+  - **Alternative:** Separate ignore files per app only (rejected because `apps/api` had none and root consistency matters).
+- **Decision:** Keep `.cursor/rules` trackable.
+  - **Why:** These are intentional project conventions, not local noise.
+  - **Alternative:** Ignore all `.cursor` (rejected because it would drop useful shared rules).
+
+## Assumptions
+
+- You want learning logs in `notes/` committed.
+- You want Cursor rules committed for portfolio/project consistency.
+
+## Failure Modes
+
+- If you later want to share `.env` templates beyond `.env.example`, ignore rules may need refinement.
+- Future tooling (e.g. Turborepo/PNPM store) might require adding new cache paths.
+
+## How to Test (commands + steps)
+
+```bash
+git status --short
+git check-ignore -v apps/api/node_modules apps/api/dist apps/web/.next
+```
+
+Expected:
+- generated folders show ignore matches
+- source files remain untracked and available for commit
+
+## Next Steps
+
+1. Review `git status` and confirm only meaningful files are staged in the first commit.
+2. Add a root `README.md` and optional root `package.json` scripts (`dev:web`, `dev:api`) after first commit.
+3. Commit the bootstrap baseline.
+
+## Verification Checklist
+
+- [ ] Root `.gitignore` exists.
+- [ ] `apps/api/node_modules`, `apps/api/dist`, and `apps/web/.next` are ignored.
+- [ ] `.cursor/rules/**` is NOT ignored.
+- [ ] Source files in `apps/web/src` and `apps/api/src` are still visible in `git status`.

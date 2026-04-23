@@ -1,0 +1,65 @@
+---
+title: Revert frontend package name back to web
+date: 2026-04-23
+tags: [frontend, npm, rollback, package-json]
+---
+
+## Context
+
+We previously renamed the Next.js package name from `web` to `frontend` for a more traditional label. You asked to revert that naming change.
+
+## Goal
+
+Restore the package name in `apps/web/package.json` back to `web`.
+
+## Files Changed
+
+- `apps/web/package.json`
+- `notes/learning-log/2026-04-23/revert-frontend-package-name-to-web.mdx`
+
+## Implementation Notes (key logic explained)
+
+- Reverted one field in `apps/web/package.json`:
+  - from: `"name": "frontend"`
+  - to: `"name": "web"`
+- No scripts, dependencies, or folder paths were changed.
+
+## Key Decisions (and alternatives considered)
+
+- **Decision:** Revert only package name.
+  - **Why:** Smallest possible change matching request.
+  - **Alternative:** Keep `frontend` and rename folder to `apps/frontend` later (not requested).
+
+## Assumptions
+
+- You prefer consistency with original scaffold naming right now.
+- There is no critical downstream dependency requiring `frontend` package name.
+
+## Failure Modes
+
+- If docs/scripts were already updated to expect `frontend`, they may become inconsistent.
+- Workspace tooling introduced later may need a matching package name convention decision.
+
+## How to Test (commands + steps)
+
+```bash
+cd apps/web
+npm pkg get name
+# expected: "web"
+
+npm run lint
+npm run build
+```
+
+## Next Steps
+
+1. Keep naming stable until root workspace scripts are added.
+2. If you want readability from root later, use script names (`dev:web`) instead of changing package identity frequently.
+3. Add root `package.json` when `apps/api` is initialized.
+
+## Verification Checklist
+
+- [ ] `apps/web/package.json` has `"name": "web"`.
+- [ ] `npm pkg get name` returns `"web"`.
+- [ ] `npm run lint` passes.
+- [ ] `npm run build` passes.

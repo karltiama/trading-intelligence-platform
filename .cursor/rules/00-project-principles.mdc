@@ -1,0 +1,34 @@
+---
+description: Core principles for Trading Intelligence Platform
+alwaysApply: true
+---
+
+# Trading Intelligence Platform — Core Principles
+
+## Architecture Boundaries
+- `apps/web` (Next.js) MUST NOT import from `apps/api` and MUST NOT use Prisma directly.
+- Frontend ↔ backend communicate over HTTP only. The only shared code is typed contracts (e.g. `packages/contracts` or a generated client).
+- Business logic lives in `apps/api` services. Controllers orchestrate; services decide; repositories persist.
+
+## MVP Phase Discipline
+- Current phase: **paper trading + dashboards + automation**. No live broker code.
+- Broker integration is behind a `BrokerPort` interface with a `PaperBroker` default. A real `AlpacaBroker` is stubbed until explicitly scheduled.
+- No queues, microservices, event sourcing, or multi-tenant plumbing unless a concrete user story in the current phase needs it.
+
+## Simplicity Rules
+- Explicit > clever. No premature DRY, no speculative abstractions, no "utils" dumping grounds.
+- A function beats a class when there is no state. A module beats a package when it isn't reused.
+- New dependency requires a one-line justification and a simpler alternative considered.
+
+## Money & Time
+- Money is never `float` / `number`. Use Prisma `Decimal` in persistence and integer cents or `Decimal.js` in memory. Format only at the UI edge.
+- All timestamps are UTC `DateTime`. No local time in storage or on the wire.
+
+## Type Safety
+- No `any` in public signatures. No `@ts-ignore` without an inline comment explaining why.
+- Parse untrusted input at the boundary (DTO or zod). Internal code trusts its types.
+
+## Definition of Done
+- Typecheck, lint, and tests are green.
+- New backend logic has at least one unit or integration test.
+- Behavior changes are visible in a commit message or PR description — not only in code.
