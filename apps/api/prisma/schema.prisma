@@ -1,0 +1,84 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Timeframe {
+  M1
+  M5
+  M15
+  H1
+  D1
+}
+
+enum SignalSide {
+  BUY
+  SELL
+}
+
+enum RunStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+  CANCELLED
+}
+
+model Symbol {
+  id        String   @id @default(cuid())
+  ticker    String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  candles   Candle[]
+  signals   Signal[]
+}
+
+model Candle {
+  id        String    @id @default(cuid())
+  symbolId  String
+  timeframe Timeframe
+  timestamp DateTime
+  open      Decimal   @db.Decimal(18, 8)
+  high      Decimal   @db.Decimal(18, 8)
+  low       Decimal   @db.Decimal(18, 8)
+  close     Decimal   @db.Decimal(18, 8)
+  volume    Decimal   @db.Decimal(20, 8)
+  symbol    Symbol    @relation(fields: [symbolId], references: [id], onDelete: Cascade)
+
+  @@unique([symbolId, timeframe, timestamp])
+  @@index([symbolId, timestamp])
+}
+
+model Signal {
+  id         String     @id @default(cuid())
+  symbolId   String
+  strategy   String
+  side       SignalSide
+  confidence Decimal?   @db.Decimal(5, 4)
+  entryPrice Decimal?   @db.Decimal(18, 8)
+  stopPrice  Decimal?   @db.Decimal(18, 8)
+  active     Boolean    @default(true)
+  createdAt  DateTime   @default(now())
+  symbol     Symbol     @relation(fields: [symbolId], references: [id], onDelete: Cascade)
+
+  @@index([symbolId, createdAt])
+}
+
+model StrategyRun {
+  id         String    @id @default(cuid())
+  strategy   String
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  status     RunStatus
+  notes      String?
+
+  @@index([strategy, startedAt])
+}
