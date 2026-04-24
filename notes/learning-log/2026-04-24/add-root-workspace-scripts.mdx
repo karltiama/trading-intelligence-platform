@@ -1,0 +1,60 @@
+---
+title: Add root workspace scripts for Phase 0 wrap-up
+date: 2026-04-24
+tags: [monorepo, npm-workspaces, developer-experience]
+---
+
+## Context
+
+Phase 0 backend/frontend setup was functional, but running commands required remembering app-specific paths (`apps/api`, `apps/web`).
+
+## Goal
+
+Add a root workspace entrypoint so common dev/test/db tasks are runnable from repo root.
+
+## Files Changed
+
+- `package.json` (repo root)
+- `notes/learning-log/2026-04-24/add-root-workspace-scripts.mdx`
+
+## Implementation Notes (key logic explained)
+
+- Added npm workspaces: `apps/*`.
+- Added root scripts for:
+  - dev (`dev:web`, `dev:api`)
+  - backend quality checks (`build:api`, `lint:api`, `test:api`, `test:e2e:api`)
+  - Prisma flow (`db:validate`, `db:generate`, `db:migrate`, `db:studio`)
+
+## Key Decisions (and alternatives considered)
+
+- **Decision:** Use npm workspaces at root.
+  - **Why:** zero extra tooling, works with current npm setup.
+  - **Alternative:** add Turborepo now (rejected to avoid Phase 0 scope creep).
+
+## Assumptions
+
+- Workspace package names remain `api` and `web`.
+
+## Failure Modes
+
+- Renaming workspace package names without updating root scripts will break script targets.
+
+## How to Test (commands + steps)
+
+```bash
+npm run dev:api
+npm run dev:web
+npm run db:validate
+```
+
+## Next Steps
+
+1. Keep root scripts lean; only add high-frequency commands.
+2. Add CI later using the same root scripts.
+
+## Verification Checklist
+
+- [ ] Root `package.json` exists with `workspaces`.
+- [ ] `npm run dev:api` resolves to `apps/api`.
+- [ ] `npm run dev:web` resolves to `apps/web`.
+- [ ] Prisma scripts run from repo root via workspace delegation.

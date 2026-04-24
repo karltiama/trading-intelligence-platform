@@ -1,0 +1,54 @@
+---
+title: Fix strict lint typing in symbols e2e test
+date: 2026-04-24
+tags: [testing, lint, typescript]
+---
+
+## Context
+
+Phase 0 wrap-up checks exposed strict lint errors in `app.e2e-spec.ts` because `response.body` was treated as `any`.
+
+## Goal
+
+Make the `/symbols` e2e test type-safe under current ESLint rules without changing endpoint behavior.
+
+## Files Changed
+
+- `apps/api/test/app.e2e-spec.ts`
+- `notes/learning-log/2026-04-24/fix-e2e-symbols-lint-typing.mdx`
+
+## Implementation Notes (key logic explained)
+
+- Added a local `SymbolResponse` type for expected payload shape.
+- Cast `response.body` to `SymbolResponse[]`.
+- Replaced direct `response.body` usage with typed `symbols` variable.
+
+## Key Decisions (and alternatives considered)
+
+- **Decision:** use local response type in test file.
+  - **Alternative:** disable lint rules inline (rejected to keep strict quality guardrails).
+
+## Assumptions
+
+- `/symbols` returns the selected fields defined in current service query.
+
+## Failure Modes
+
+- If `/symbols` response shape changes, this test will surface the mismatch.
+
+## How to Test (commands + steps)
+
+```bash
+cd apps/api
+npm run lint
+npm run test:e2e
+```
+
+## Next Steps
+
+1. Keep adding typed response assertions as API surface grows.
+
+## Verification Checklist
+
+- [ ] `npm run lint` passes with no unsafe `any` errors.
+- [ ] `npm run test:e2e` still passes all tests.

@@ -1,0 +1,60 @@
+---
+title: Replace API scaffold README with project instructions
+date: 2026-04-24
+tags: [documentation, nestjs, phase-0]
+---
+
+## Context
+
+`apps/api/README.md` was still the default Nest starter template, which did not reflect this monorepo or Neon/Prisma setup.
+
+## Goal
+
+Provide concise, project-specific API documentation for Phase 0 handoff readiness.
+
+## Files Changed
+
+- `apps/api/README.md`
+- `notes/learning-log/2026-04-24/refresh-api-readme-phase0.mdx`
+
+## Implementation Notes (key logic explained)
+
+- Replaced generic Nest boilerplate with:
+  - Phase 0 module/endpoint status
+  - env setup guidance
+  - run/test/build commands
+  - Prisma workflow commands
+  - naming and architecture notes
+
+## Key Decisions (and alternatives considered)
+
+- **Decision:** Keep README operational and short.
+  - **Alternative:** deep architecture narrative in README (moved to dedicated summary docs).
+
+## Assumptions
+
+- Root workspace scripts are available for convenience (`dev:api`).
+
+## Failure Modes
+
+- README commands can drift if scripts are renamed without doc updates.
+
+## How to Test (commands + steps)
+
+```bash
+cd apps/api
+npm run prisma:validate
+npm run test:e2e
+npm run build
+```
+
+## Next Steps
+
+1. Add root README for monorepo-wide onboarding.
+2. Keep module-level docs in `notes/` as architecture grows.
+
+## Verification Checklist
+
+- [ ] API README reflects current endpoints and modules.
+- [ ] Prisma command section matches actual scripts.
+- [ ] New contributor can run API from README alone.

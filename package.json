@@ -1,0 +1,19 @@
+{
+  "name": "trading-intelligence-platform",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace web",
+    "dev:api": "npm run start:dev --workspace api",
+    "build:api": "npm run build --workspace api",
+    "lint:api": "npm run lint --workspace api",
+    "test:api": "npm run test --workspace api",
+    "test:e2e:api": "npm run test:e2e --workspace api",
+    "db:validate": "npm run prisma:validate --workspace api",
+    "db:generate": "npm run prisma:generate --workspace api",
+    "db:migrate": "npm run prisma:migrate:init --workspace api",
+    "db:studio": "npm run prisma:studio --workspace api"
+  }
+}

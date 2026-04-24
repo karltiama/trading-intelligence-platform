@@ -5,6 +5,14 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 
+type SymbolResponse = {
+  id: string;
+  ticker: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 describe('AppController (e2e)', () => {
   let app: INestApplication<App>;
 
@@ -32,20 +40,20 @@ describe('AppController (e2e)', () => {
   });
 
   it('/symbols (GET)', async () => {
-    const response = await request(app.getHttpServer()).get('/symbols').expect(200);
+    const response = await request(app.getHttpServer())
+      .get('/symbols')
+      .expect(200);
+    const symbols = response.body as SymbolResponse[];
 
-    expect(Array.isArray(response.body)).toBe(true);
+    expect(Array.isArray(symbols)).toBe(true);
 
-    if (response.body.length > 0) {
-      expect(response.body[0]).toEqual(
-        expect.objectContaining({
-          id: expect.any(String),
-          ticker: expect.any(String),
-          name: expect.any(String),
-          createdAt: expect.any(String),
-          updatedAt: expect.any(String),
-        }),
-      );
+    if (symbols.length > 0) {
+      const first = symbols[0];
+      expect(typeof first.id).toBe('string');
+      expect(typeof first.ticker).toBe('string');
+      expect(typeof first.name).toBe('string');
+      expect(typeof first.createdAt).toBe('string');
+      expect(typeof first.updatedAt).toBe('string');
     }
   });
 
