@@ -1,0 +1,64 @@
+---
+title: Add root monorepo README
+date: 2026-04-24
+tags: [documentation, monorepo, phase-0]
+---
+
+## Context
+
+Project onboarding and run instructions were split across app-level files, and the repo lacked a single top-level entrypoint for setup and workflow.
+
+## Goal
+
+Add a practical root README that helps a contributor (or future you) install, run, validate, and continue Phase 1 quickly.
+
+## Files Changed
+
+- `README.md`
+- `notes/learning-log/2026-04-24/add-root-readme.mdx`
+
+## Implementation Notes (key logic explained)
+
+- Added concise sections:
+  - project status
+  - stack
+  - monorepo layout
+  - prerequisites
+  - env setup
+  - root scripts
+  - API defaults/checks
+  - architecture notes
+  - Phase 1 focus tasks
+
+## Key Decisions (and alternatives considered)
+
+- **Decision:** keep README operational and short.
+  - **Alternative:** heavy architecture deep-dive in root README (rejected; deep docs remain in `notes/`).
+
+## Assumptions
+
+- Root workspace scripts remain the standard way to run apps and DB tasks.
+
+## Failure Modes
+
+- README can drift if scripts/endpoints change without documentation updates.
+
+## How to Test (commands + steps)
+
+```bash
+npm install
+npm run dev:api
+npm run dev:web
+npm run test:e2e:api
+```
+
+## Next Steps
+
+1. Keep root README updated as new Phase 1 endpoints are added.
+2. Link feature-specific docs in `notes/` when new modules gain complexity.
+
+## Verification Checklist
+
+- [ ] Root `README.md` exists and is readable.
+- [ ] Commands in README map to real scripts.
+- [ ] API URLs and endpoint examples match current runtime.

@@ -3,7 +3,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { HealthModule } from './health/health.module';
 import { IndicatorsModule } from './indicators/indicators.module';
-import { MarketDataModule } from './market-data/market-data.module';
+import { MarketDataModule } from './modules/market-data/market-data.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
 import { SignalsModule } from './signals/signals.module';

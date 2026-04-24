@@ -1,0 +1,91 @@
+---
+title: Phase 1 Alpaca market-data module scaffold
+date: 2026-04-24
+tags: [nestjs, alpaca, market-data, phase-1]
+---
+
+## Context
+
+Phase 1 started with a requirement to prove clean Alpaca market-data integration without DB writes, while keeping Nest module boundaries production-minded.
+
+## Goal
+
+Create a new `src/modules/market-data` module with:
+- reusable Alpaca client
+- service methods for test + bars
+- controller routes for `/market-data/test` and `/market-data/:symbol/bars`
+- clean JSON output and proper Nest error handling.
+
+## Files Changed
+
+- `apps/api/src/modules/market-data/market-data.module.ts`
+- `apps/api/src/modules/market-data/market-data.service.ts`
+- `apps/api/src/modules/market-data/market-data.controller.ts`
+- `apps/api/src/modules/market-data/alpaca.client.ts`
+- `apps/api/src/modules/market-data/dto/bars-query.dto.ts`
+- `apps/api/src/modules/market-data/dto/market-data-response.dto.ts`
+- `apps/api/src/app.module.ts`
+- `apps/api/.env.example`
+- `apps/api/.env`
+- Removed old placeholder files under `apps/api/src/market-data/*`
+
+## Implementation Notes (key logic explained)
+
+- `AlpacaClient` centralizes API calls and headers from env variables.
+- `MarketDataService` owns use-cases:
+  - `testConnection()` uses `AAPL` latest quote
+  - `getBars(symbol, limit)` fetches 1D bars (default 30)
+- `MarketDataController` exposes:
+  - `GET /market-data/test`
+  - `GET /market-data/:symbol/bars`
+- Responses are normalized (not raw Alpaca payloads).
+- Errors from Alpaca are translated to `BadGatewayException`; missing credentials throw `InternalServerErrorException`.
+- Added Nest `Logger` logs for successful quote/bar fetches.
+
+## Key Decisions (and alternatives considered)
+
+- **Decision:** use native `fetch` in client instead of adding axios/http module.
+  - **Why:** fewer dependencies and enough for this scope.
+  - **Alternative:** `HttpService` with RxJS pipeline (deferred to keep integration lean).
+
+## Assumptions
+
+- Alpaca credentials in `.env` are valid and market-data access is enabled.
+- Using Alpaca IEX feed (`feed=iex`) is acceptable for MVP validation.
+
+## Failure Modes
+
+- Missing/invalid Alpaca credentials -> 500 with credentials/config error.
+- Invalid symbol or upstream API errors -> 502 from Alpaca client wrapper.
+
+## How to Test (commands + steps)
+
+```bash
+cd apps/api
+npm run lint
+npm run build
+npm run test
+npm run test:e2e
+npm run start
+```
+
+Then hit:
+
+```bash
+GET http://localhost:3001/market-data/test
+GET http://localhost:3001/market-data/AAPL/bars
+```
+
+## Next Steps
+
+1. Add request DTO validation with global `ValidationPipe` for query params.
+2. Add e2e tests for new market-data routes.
+3. Add persistence flow in a separate step (still no writes in this task).
+
+## Verification Checklist
+
+- [ ] New module exists under `src/modules/market-data` with requested files.
+- [ ] `AppModule` imports module from new path.
+- [ ] `.env.example` includes `ALPACA_BASE_URL`.
+- [ ] Lint/build/tests pass.
+- [ ] Both market-data routes are reachable.
