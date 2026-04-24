@@ -1,0 +1,60 @@
+---
+title: Phase 0 Neon env normalization
+date: 2026-04-24
+tags: [prisma, neon, env, phase-0]
+---
+
+## Context
+
+Prisma and Nest integration were already scaffolded in `apps/api`, but `.env` still had the Prisma init placeholder URL and was missing backend env keys required by project conventions.
+
+## Goal
+
+Normalize `apps/api/.env` to project-standard keys before connecting real Neon credentials.
+
+## Files Changed
+
+- `apps/api/.env`
+- `notes/learning-log/2026-04-24/phase-0-neon-connection-steps.mdx`
+
+## Implementation Notes (key logic explained)
+
+- Replaced placeholder local URL with empty `DATABASE_URL=` to avoid accidental wrong-target migrations.
+- Added:
+  - `NODE_ENV=development`
+  - `ALPACA_API_KEY=`
+  - `ALPACA_SECRET_KEY=`
+
+## Key Decisions (and alternatives considered)
+
+- **Decision:** Keep `.env` explicit and minimal.
+- **Alternative rejected:** leaving Prisma-generated local URL as default (risk of migrating wrong DB).
+
+## Assumptions
+
+- Neon URL will be pasted manually after project creation.
+
+## Failure Modes
+
+- Running migrations before setting `DATABASE_URL` will fail (expected and safe).
+
+## How to Test (commands + steps)
+
+```bash
+cd apps/api
+npx prisma validate
+```
+
+If `DATABASE_URL` is still empty, command may fail at connection steps; set Neon URL first.
+
+## Next Steps
+
+1. Create Neon project and copy pooled connection string.
+2. Paste into `apps/api/.env`.
+3. Run `prisma validate`, `generate`, then `migrate dev --name init`.
+
+## Verification Checklist
+
+- [ ] `apps/api/.env` has all four keys.
+- [ ] `DATABASE_URL` points to Neon before migrations.
+- [ ] Prisma commands run from `apps/api`.
