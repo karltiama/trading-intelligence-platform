@@ -1,0 +1,65 @@
+---
+title: Phase 0 NestJS module skeletons
+date: 2026-04-24
+tags: [nestjs, api, architecture, phase-0]
+---
+
+## Context
+
+Trading Intelligence Platform API at `apps/api` needed feature module boundaries before Prisma, Alpaca, or cron work.
+
+## Goal
+
+Add minimal Nest modules: `health`, `market-data`, `indicators`, `signals`, `scheduler`, with only the agreed stub routes and wiring in `AppModule`.
+
+## Files Changed
+
+- `apps/api/src/health/health.service.ts` — health JSON narrowed to `{ status: "ok" }`.
+- `apps/api/src/market-data/*` — `GET /market-data/status`.
+- `apps/api/src/signals/*` — `GET /signals` → `[]`.
+- `apps/api/src/indicators/*` — module + service only, exported.
+- `apps/api/src/scheduler/*` — module + service only, exported.
+- `apps/api/src/app.module.ts` — imports all five feature modules.
+
+## Implementation Notes (key logic explained)
+
+- Controllers stay thin; services own return shapes for HTTP stubs.
+- `IndicatorsModule` and `SchedulerModule` export their services so other modules can inject them later without new wiring noise in Phase 0.
+
+## Key Decisions (and alternatives considered)
+
+- **Alphabetical imports** in `app.module.ts` for stable ordering.
+- **No Prisma, no ScheduleModule**, per scope guard.
+
+## Assumptions
+
+- E2e suite remains scaffold-only; new routes can get tests in a later pass.
+
+## Failure Modes
+
+- If route paths change, frontend smoke URLs must be updated.
+
+## How to Test (commands + steps)
+
+```bash
+cd apps/api
+npm run build && npm run lint && npm run test && npm run test:e2e
+npm run start
+# curl http://localhost:3001/health
+# curl http://localhost:3001/market-data/status
+# curl http://localhost:3001/signals
+```
+
+## Next Steps
+
+- Add e2e coverage for new routes.
+- Inject `IndicatorsService` / `SchedulerService` from domain modules when ready.
+
+## Verification Checklist
+
+- [ ] All five modules import in `AppModule`.
+- [ ] `GET /health` returns `{"status":"ok"}`.
+- [ ] `GET /market-data/status` returns `{"status":"not_configured"}`.
+- [ ] `GET /signals` returns `[]`.
+- [ ] No controllers under `indicators/` or `scheduler/`.
+- [ ] Build and tests pass.
