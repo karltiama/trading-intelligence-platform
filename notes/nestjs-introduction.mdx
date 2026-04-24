@@ -1,0 +1,134 @@
+---
+title: NestJS in this repo — your API layer
+description: How NestJS maps to apps/api in the Trading Intelligence Platform
+date: 2026-04-24
+---
+
+# NestJS in *your* project
+
+You are building the **Trading Intelligence Platform**: a backend-heavy monorepo with **Next.js** in `apps/web` and **NestJS** in `apps/api`. This doc is tied to **what you actually have checked in today**, not a generic course.
+
+---
+
+## What NestJS is (in one paragraph)
+
+**NestJS** is a Node.js framework for structured HTTP APIs. It gives you **modules** (composition), **controllers** (HTTP routes), **services** (business logic), and **dependency injection** (wiring classes together without manual `new`). You write TypeScript, run it with Node, and ship something that feels closer to “real backend engineering” than a single ad-hoc Express file — which matches how you want to grow.
+
+---
+
+## How `apps/api` is organized *right now*
+
+Your API lives here:
+
+```text
+apps/api/
+├── src/
+│   ├── main.ts              # boots the app, CORS, port
+│   ├── app.module.ts        # root module — imports feature modules
+│   ├── app.controller.ts    # scaffold: GET /
+│   ├── app.service.ts       # scaffold: "Hello World!"
+│   └── health/
+│       ├── health.module.ts
+│       ├── health.controller.ts
+│       └── health.service.ts
+├── test/                    # e2e tests (Jest + supertest)
+├── package.json
+├── nest-cli.json
+├── tsconfig.json
+└── tsconfig.build.json
+```
+
+Generated **`dist/`** and **`node_modules/`** exist locally but are gitignored — they are build output, not the source of truth.
+
+The **root module** is `AppModule`. Anything you want the app to know about (feature modules, global providers) eventually gets **imported or declared** there. Today you already import **`HealthModule`**.
+
+---
+
+## What **controllers** do (in your code)
+
+Controllers answer the question: **“Which URL and HTTP verb map to which handler?”**
+
+- **`AppController`** is registered with `@Controller()` (no path prefix), so its `@Get()` becomes **`GET /`**. It returns whatever `AppService.getHello()` gives — right now the string `Hello World!`.
+- **`HealthController`** uses `@Controller('health')`, so its `@Get()` is **`GET /health`**. It delegates to `HealthService.getHealth()` and returns JSON: `status`, `service`, `timestamp`.
+
+Controllers should stay **thin**: parse route/query/body (later with DTOs), call a service, return the result. You are already doing that in `health`.
+
+---
+
+## What **services** do (in your code)
+
+Services hold **behavior** you might reuse or test. They are classes decorated with `@Injectable()` so Nest can **inject** them into controllers (or into other services).
+
+- **`AppService`**: trivial placeholder — returns a fixed string. Fine for the scaffold; you will replace or narrow this as the app grows.
+- **`HealthService`**: returns a small object for liveness checks. No database, no broker — on purpose. That is still “real” backend work: operational endpoints matter in production.
+
+As you add trading logic, **services** (or dedicated domain classes they call) are where rules live: validating a signal, computing an indicator snapshot, enforcing paper-trading constraints, etc.
+
+---
+
+## What **modules** do (in your code)
+
+A **module** is a **bundle** of controllers and providers that belong together. `HealthModule` declares:
+
+- `controllers: [HealthController]`
+- `providers: [HealthService]`
+
+`AppModule` **imports** `HealthModule`, which tells Nest: “include this feature in the running application.” That is how you will add **`MarketDataModule`**, **`IndicatorsModule`**, **`SignalsModule`**, **`SchedulerModule`** later — one import per feature, each folder owning its own controller(s) and service(s).
+
+---
+
+## How a request flows *through your project today*
+
+1. A client (browser on `localhost:3000`, `curl`, or your Next app) sends **`GET http://localhost:3001/health`** (or **`/`**).
+2. **`main.ts`** has already created the Nest app, enabled **CORS** for your local front-end origins, and bound the server to **`process.env.PORT ?? 3001`**.
+3. Nest’s HTTP layer matches the path to **`HealthController.getHealth()`** (or **`AppController.getHello()`** for `/`).
+4. The controller calls **`HealthService.getHealth()`** (or **`AppService.getHello()`**).
+5. The return value is serialized (JSON for objects, plain text for your hello string) and sent back with status **200**.
+
+When you add guards, pipes, and global validation, extra steps will run *between* step 2 and 5 — same pipeline idea.
+
+---
+
+## What each important file does *today*
+
+| File | Role |
+|------|------|
+| `src/main.ts` | Creates `NestFactory`, applies CORS, listens on port (default **3001** so Next can use **3000**). |
+| `src/app.module.ts` | Root composition: imports `HealthModule`, registers `AppController` + `AppService`. |
+| `src/app.controller.ts` / `app.service.ts` | Default scaffold for **`GET /`**. |
+| `src/health/health.module.ts` | Groups health controller + service. |
+| `src/health/health.controller.ts` | Defines **`GET /health`**. |
+| `src/health/health.service.ts` | Builds the health JSON payload. |
+| `test/app.e2e-spec.ts` | Ensures the HTTP surface behaves (you ran `npm run test:e2e` successfully). |
+| `nest-cli.json` / `tsconfig*.json` | Tooling and TypeScript settings for build and `nest build`. |
+
+That is a small tree — intentionally. You are at the phase where **clarity beats breadth**.
+
+---
+
+## How this connects to **Prisma** later
+
+You have not added Prisma to `apps/api` yet, but your Cursor rules already sketch the shape:
+
+- **`PrismaService`** (thin wrapper around the Prisma client) will be a **provider** in a `PrismaModule`, imported where persistence is needed.
+- **Repositories** (e.g. `orders.repository.ts`) will be the **only** place that imports `PrismaService` and runs queries — keeping controllers and domain services free of raw SQL/client calls.
+- Your schema will live under repo-level **`prisma/`** (Neon Postgres), and migrations will stay explicit and reviewable.
+
+When that lands, the request flow becomes: **Controller → Service (rules) → Repository (Prisma) → back out as DTOs or domain objects** — still the same Nest pipeline, with one more injected layer.
+
+---
+
+## How this backend supports the **Trading Intelligence Platform**
+
+Think of `apps/api` as the **system of record for behavior** your dashboards and automations depend on:
+
+- **Market data** — ingest or fetch bars, quotes, or snapshots; normalize and store what you need for replay and UI.
+- **Indicators** — pure or mostly-pure transforms over series; callable from services and testable without the UI.
+- **Signals** — rules that emit events or state changes (paper trades, alerts, “watch this symbol”).
+- **Scheduler** — cron or interval jobs: refresh data, roll windows, run batch analytics — without cramming timers into React.
+
+Your **Next.js** app in `apps/web` stays a **client**: it calls this API over HTTP (CORS is already configured for local dev). That separation is what keeps the portfolio story clean: **one backend**, **one place** for money/time rules, audits, and tests.
+
+You are not fighting the framework — you are using a small set of Nest concepts **repeatedly** until the product shows up. The scaffold is boring on purpose; **`/health`** is already the first “production habit.” Next wins are **one module at a time** (market-data → indicators → signals → scheduler), each with the same controller → service rhythm you already have in `health`.
+
+Welcome to the part of the stack where your architecture decisions actually stick.
