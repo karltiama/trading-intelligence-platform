@@ -31,17 +31,44 @@ enum RunStatus {
   CANCELLED
 }
 
+enum PaperOrderSide {
+  BUY
+  SELL
+}
+
+enum PaperOrderType {
+  MARKET
+}
+
+enum PaperOrderStatus {
+  NEW
+  FILLED
+  CANCELED
+}
+
+enum SignalExecutionStatus {
+  PENDING
+  PLACED
+  SKIPPED_DUPLICATE
+  REJECTED_RISK
+  FAILED
+}
+
 model Symbol {
-  id         String       @id @default(cuid())
-  ticker     String       @unique
-  name       String?
-  isActive   Boolean      @default(true)
-  assetType  String?
-  createdAt  DateTime     @default(now())
-  updatedAt  DateTime     @updatedAt
-  candles    Candle[]
-  signals    Signal[]
-  dailyPrices DailyPrice[]
+  id             String          @id @default(cuid())
+  ticker         String          @unique
+  name           String?
+  isActive       Boolean         @default(true)
+  assetType      String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  candles        Candle[]
+  signals        Signal[]
+  dailyPrices    DailyPrice[]
+  paperOrders    PaperOrder[]
+  paperFills     PaperFill[]
+  paperPositions PaperPosition[]
+  automationSignalExecutions AutomationSignalExecution[]
 }
 
 model DailyPrice {
@@ -94,12 +121,120 @@ model Signal {
 }
 
 model StrategyRun {
-  id         String    @id @default(cuid())
-  strategy   String
-  startedAt  DateTime  @default(now())
-  finishedAt DateTime?
-  status     RunStatus
-  notes      String?
+  id               String                  @id @default(cuid())
+  strategy         String
+  startedAt        DateTime                @default(now())
+  finishedAt       DateTime?
+  status           RunStatus
+  notes            String?
+  signalExecutions AutomationSignalExecution[]
 
   @@index([strategy, startedAt])
+}
+
+model AutomationSignalExecution {
+  id            String                @id @default(cuid())
+  runId         String
+  signalKey     String
+  symbolId      String
+  side          PaperOrderSide
+  status        SignalExecutionStatus @default(PENDING)
+  reason        String?
+  orderId       String?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  run           StrategyRun           @relation(fields: [runId], references: [id], onDelete: Cascade)
+  symbol        Symbol                @relation(fields: [symbolId], references: [id], onDelete: Restrict)
+  order         PaperOrder?           @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@unique([runId, signalKey])
+  @@index([runId, createdAt])
+  @@index([symbolId, createdAt])
+  @@index([orderId])
+}
+
+model PaperAccount {
+  id           String               @id @default(cuid())
+  startingCash Decimal              @db.Decimal(18, 8)
+  cashBalance  Decimal              @db.Decimal(18, 8)
+  currency     String               @default("USD")
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  orders       PaperOrder[]
+  fills        PaperFill[]
+  positions    PaperPosition[]
+  snapshots    PaperAccountSnapshot[]
+}
+
+model PaperOrder {
+  id          String           @id @default(cuid())
+  accountId   String
+  symbolId    String
+  side        PaperOrderSide
+  type        PaperOrderType   @default(MARKET)
+  status      PaperOrderStatus @default(NEW)
+  quantity    Decimal          @db.Decimal(18, 8)
+  requestedAt DateTime         @default(now())
+  filledAt    DateTime?
+  canceledAt  DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  account     PaperAccount     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  symbol      Symbol           @relation(fields: [symbolId], references: [id], onDelete: Restrict)
+  fill        PaperFill?
+  automationSignalExecutions AutomationSignalExecution[]
+
+  @@index([accountId, requestedAt])
+  @@index([symbolId, requestedAt])
+  @@index([status, requestedAt])
+}
+
+model PaperFill {
+  id          String       @id @default(cuid())
+  accountId   String
+  orderId     String       @unique
+  symbolId    String
+  side        PaperOrderSide
+  quantity    Decimal      @db.Decimal(18, 8)
+  price       Decimal      @db.Decimal(18, 8)
+  notional    Decimal      @db.Decimal(18, 8)
+  filledAt    DateTime
+  createdAt   DateTime     @default(now())
+  account     PaperAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  order       PaperOrder   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  symbol      Symbol       @relation(fields: [symbolId], references: [id], onDelete: Restrict)
+
+  @@index([accountId, filledAt])
+  @@index([symbolId, filledAt])
+}
+
+model PaperPosition {
+  id            String       @id @default(cuid())
+  accountId     String
+  symbolId      String
+  quantity      Decimal      @db.Decimal(18, 8)
+  averageCost   Decimal      @db.Decimal(18, 8)
+  realizedPnl   Decimal      @db.Decimal(18, 8) @default(0)
+  openedAt      DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  account       PaperAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  symbol        Symbol       @relation(fields: [symbolId], references: [id], onDelete: Restrict)
+
+  @@unique([accountId, symbolId])
+  @@index([accountId, updatedAt])
+}
+
+model PaperAccountSnapshot {
+  id                String       @id @default(cuid())
+  accountId         String
+  asOf              DateTime     @default(now())
+  cashBalance       Decimal      @db.Decimal(18, 8)
+  positionsValue    Decimal      @db.Decimal(18, 8)
+  totalEquity       Decimal      @db.Decimal(18, 8)
+  unrealizedPnl     Decimal      @db.Decimal(18, 8)
+  realizedPnl       Decimal      @db.Decimal(18, 8)
+  createdAt         DateTime     @default(now())
+  account           PaperAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, asOf])
 }
