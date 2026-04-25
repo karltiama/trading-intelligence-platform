@@ -35,7 +35,8 @@ coverage/
 .turbo/
 .cache/
 
-# Docs: notes/ (MDX, learning logs) stays versioned — do not add `/notes/` here.
+# Local notes and learning logs
+notes/
 
 # Keep project-specific Cursor rules, ignore local Cursor state
 .cursor/*

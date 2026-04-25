@@ -31,6 +31,7 @@ export function mapSymbolLatestBarsToSummary(
 
   return {
     symbol: row.ticker,
+    asOf: row.latestDate.toISOString(),
     close: roundTwo(close),
     changePercent,
     volume,

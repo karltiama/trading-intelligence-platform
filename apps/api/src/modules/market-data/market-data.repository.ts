@@ -14,6 +14,7 @@ export type DailyBarWrite = {
 
 export type SymbolLatestBars = {
   ticker: string;
+  latestDate: Date;
   latestClose: Prisma.Decimal;
   latestVolume: Prisma.Decimal;
   previousClose: Prisma.Decimal | null;
@@ -185,6 +186,7 @@ export class MarketDataRepository {
       string,
       {
         ticker: string;
+        latestDate: Date;
         latestClose: Prisma.Decimal;
         latestVolume: Prisma.Decimal;
         previousClose: Prisma.Decimal | null;
@@ -196,6 +198,7 @@ export class MarketDataRepository {
       if (!existing) {
         bySymbol.set(row.symbolId, {
           ticker: row.symbol.ticker,
+          latestDate: row.date,
           latestClose: row.close,
           latestVolume: row.volume,
           previousClose: null,

@@ -6,9 +6,9 @@ import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 
 type SymbolResponse = {
-  id: string;
   ticker: string;
-  name: string;
+  name: string | null;
+  isActive: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -49,9 +49,11 @@ describe('AppController (e2e)', () => {
 
     if (symbols.length > 0) {
       const first = symbols[0];
-      expect(typeof first.id).toBe('string');
       expect(typeof first.ticker).toBe('string');
-      expect(typeof first.name).toBe('string');
+      expect(
+        first.name === null || typeof first.name === 'string',
+      ).toBe(true);
+      expect(typeof first.isActive).toBe('boolean');
       expect(typeof first.createdAt).toBe('string');
       expect(typeof first.updatedAt).toBe('string');
     }

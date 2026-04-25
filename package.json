@@ -19,6 +19,7 @@
     "lint:api": "npm run lint --workspace api",
     "test:api": "npm run test --workspace api",
     "test:e2e:api": "npm run test:e2e --workspace api",
+    "smoke:api": "node scripts/api-smoke-check.js",
     "db:validate": "npm run prisma:validate --workspace api",
     "db:generate": "npm run prisma:generate --workspace api",
     "db:migrate": "npm run prisma:migrate:init --workspace api",

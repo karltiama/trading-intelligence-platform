@@ -49,31 +49,66 @@ export class MarketDataService {
     symbol: string,
     limit = DEFAULT_SYNC_BAR_LIMIT,
   ): Promise<number> {
+    const runId = `sync-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const startedAtMs = Date.now();
     const ticker = this.normalizeTicker(symbol);
     const effectiveLimit =
       limit === undefined || limit < 1 ? DEFAULT_SYNC_BAR_LIMIT : limit;
 
-    const bars = await this.alpacaClient.getDailyBars(ticker, effectiveLimit);
-    const { id: symbolId } =
-      await this.marketDataRepository.findOrCreateSymbolByTicker(ticker);
-
-    const rows = bars.map((bar) => ({
-      date: utcCalendarDateFromIso(bar.timestamp),
-      open: new Prisma.Decimal(bar.open),
-      high: new Prisma.Decimal(bar.high),
-      low: new Prisma.Decimal(bar.low),
-      close: new Prisma.Decimal(bar.close),
-      volume: new Prisma.Decimal(bar.volume),
-      source: 'alpaca',
-    }));
-
-    await this.marketDataRepository.upsertDailyBars(symbolId, rows);
-
     this.logger.log(
-      `Synced ${rows.length} daily bar(s) for ${ticker} into the database.`,
+      JSON.stringify({
+        event: 'sync_daily_bars_started',
+        runId,
+        symbol: ticker,
+        limit: effectiveLimit,
+      }),
     );
 
-    return rows.length;
+    try {
+      const bars = await this.alpacaClient.getDailyBars(ticker, effectiveLimit);
+      const { id: symbolId } =
+        await this.marketDataRepository.findOrCreateSymbolByTicker(ticker);
+
+      const rows = bars.map((bar) => ({
+        date: utcCalendarDateFromIso(bar.timestamp),
+        open: new Prisma.Decimal(bar.open),
+        high: new Prisma.Decimal(bar.high),
+        low: new Prisma.Decimal(bar.low),
+        close: new Prisma.Decimal(bar.close),
+        volume: new Prisma.Decimal(bar.volume),
+        source: 'alpaca',
+      }));
+
+      await this.marketDataRepository.upsertDailyBars(symbolId, rows);
+
+      this.logger.log(
+        JSON.stringify({
+          event: 'sync_daily_bars_completed',
+          runId,
+          symbol: ticker,
+          barsFetched: bars.length,
+          rowsUpserted: rows.length,
+          durationMs: Date.now() - startedAtMs,
+        }),
+      );
+
+      return rows.length;
+    } catch (error) {
+      this.logger.error(
+        JSON.stringify({
+          event: 'sync_daily_bars_failed',
+          runId,
+          symbol: ticker,
+          limit: effectiveLimit,
+          durationMs: Date.now() - startedAtMs,
+          error:
+            error instanceof Error
+              ? { name: error.name, message: error.message }
+              : { message: String(error) },
+        }),
+      );
+      throw error;
+    }
   }
 
   async syncDefaultSymbols(): Promise<{
@@ -81,16 +116,54 @@ export class MarketDataService {
     symbolsProcessed: number;
     rowsUpserted: number;
   }> {
+    const runId = `batch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const startedAtMs = Date.now();
+
+    this.logger.log(
+      JSON.stringify({
+        event: 'sync_default_symbols_started',
+        runId,
+        defaultSymbols: DEFAULT_SYNC_SYMBOLS,
+      }),
+    );
+
     await this.marketDataRepository.seedDefaultSymbols(DEFAULT_SYNC_SYMBOLS);
     const activeSymbols = await this.marketDataRepository.findActiveSymbols();
 
     let rowsUpserted = 0;
-    for (const symbol of activeSymbols) {
-      const barsUpserted = await this.syncDailyBars(
-        symbol.ticker,
-        DEFAULT_SYNC_BAR_LIMIT,
+    try {
+      for (const symbol of activeSymbols) {
+        const barsUpserted = await this.syncDailyBars(
+          symbol.ticker,
+          DEFAULT_SYNC_BAR_LIMIT,
+        );
+        rowsUpserted += barsUpserted;
+      }
+
+      this.logger.log(
+        JSON.stringify({
+          event: 'sync_default_symbols_completed',
+          runId,
+          symbolsProcessed: activeSymbols.length,
+          rowsUpserted,
+          durationMs: Date.now() - startedAtMs,
+        }),
       );
-      rowsUpserted += barsUpserted;
+    } catch (error) {
+      this.logger.error(
+        JSON.stringify({
+          event: 'sync_default_symbols_failed',
+          runId,
+          symbolsProcessed: activeSymbols.length,
+          rowsUpsertedBeforeFailure: rowsUpserted,
+          durationMs: Date.now() - startedAtMs,
+          error:
+            error instanceof Error
+              ? { name: error.name, message: error.message }
+              : { message: String(error) },
+        }),
+      );
+      throw error;
     }
 
     return {
