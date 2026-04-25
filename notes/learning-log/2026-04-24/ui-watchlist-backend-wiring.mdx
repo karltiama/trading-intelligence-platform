@@ -1,0 +1,65 @@
+---
+title: UI watchlist backend wiring
+date: 2026-04-24
+tags: [nextjs, react, dashboard, watchlist]
+---
+
+## Context
+
+Watchlist table displayed hardcoded rows from local data instead of backend DB-backed summary.
+
+## Goal
+
+Replace dummy watchlist rows with `GET /dashboard/market-summary` data and add loading/error/empty states.
+
+## Files Changed
+
+- `apps/web/src/components/dashboard/watchlist-table.tsx`
+
+## Implementation Notes (key logic explained)
+
+- Converted table component to client mode and used `useEffect` + `useState`.
+- Added fetch call to `getMarketSummary()` from API helper.
+- Mapped backend summary shape into existing UI row shape to preserve table layout.
+- Added:
+  - loading state message,
+  - backend error message,
+  - empty data fallback: `"No market data found. Run the market data sync first."`
+- Kept existing trend icons, table columns, and shadcn components intact.
+
+## Key Decisions (and alternatives considered)
+
+- **Decision:** fetch in `WatchlistTable` instead of page-level data fetching.
+  - **Why:** minimal scope and no dashboard layout redesign.
+  - **Alternative:** fetch in page and pass props (more restructuring).
+
+## Assumptions
+
+- Backend returns valid numeric values for `close`, `changePercent`, and `volume`.
+- Signal column can be lightweight derived placeholder from trend in Phase 1.
+
+## Failure Modes
+
+- Backend down leads to visible error state in table card.
+- Empty DB results show empty-state fallback message.
+
+## How to Test (commands + steps)
+
+1. Run backend API and ensure `/dashboard/market-summary` responds.
+2. Run frontend and open `/dashboard`.
+3. Verify loading text appears briefly.
+4. Verify rows render from backend values.
+5. Stop backend and verify clear error message appears.
+6. Clear/switch DB data and verify empty-state fallback appears.
+
+## Next Steps
+
+- Add manual refresh button or polling for near-live updates.
+- Consider moving fetch to server component once UX/API contracts are stable.
+
+## Verification Checklist
+
+1. [ ] Watchlist no longer imports dummy `watchlistRows`.
+2. [ ] Loading state is visible while request is pending.
+3. [ ] Backend failure displays a clear error state.
+4. [ ] Empty array shows sync-first guidance message.

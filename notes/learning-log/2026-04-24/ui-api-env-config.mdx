@@ -1,0 +1,50 @@
+---
+title: UI API env configuration
+date: 2026-04-24
+tags: [nextjs, env, api]
+---
+
+## Context
+
+Frontend needs a clear API base URL configuration for backend market summary calls.
+
+## Goal
+
+Document and provide `NEXT_PUBLIC_API_URL` in web env example.
+
+## Files Changed
+
+- `apps/web/.env.example`
+
+## Implementation Notes (key logic explained)
+
+- Added `NEXT_PUBLIC_API_URL=http://localhost:3001` to web env example.
+
+## Key Decisions (and alternatives considered)
+
+- **Decision:** use `NEXT_PUBLIC_API_URL`.
+  - **Why:** required for client-side fetch in Next.js.
+  - **Alternative:** hardcode base URL (rejected for deploy flexibility).
+
+## Assumptions
+
+- Local backend runs on port `3001`.
+
+## Failure Modes
+
+- Missing env var can still work due to API helper fallback, but explicit config is preferred.
+
+## How to Test (commands + steps)
+
+1. Copy `.env.example` to `.env.local` in `apps/web`.
+2. Start web app and backend.
+3. Confirm dashboard requests hit configured API URL.
+
+## Next Steps
+
+- Add environment-specific values in deployment config for staging/production.
+
+## Verification Checklist
+
+1. [ ] `apps/web/.env.example` includes `NEXT_PUBLIC_API_URL`.
+2. [ ] Local `.env.local` can override API base URL.

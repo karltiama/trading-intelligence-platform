@@ -1,0 +1,49 @@
+---
+title: KPI placeholder note for phase 1
+date: 2026-04-24
+tags: [dashboard, kpi, phase-1]
+---
+
+## Context
+
+Dashboard KPI cards still use static values in Phase 1 while watchlist now moves to real backend data.
+
+## Goal
+
+Make placeholder status explicit so future phases replace KPI cards with real portfolio metrics.
+
+## Files Changed
+
+- `apps/web/src/lib/dashboard-data.ts`
+
+## Implementation Notes (key logic explained)
+
+- Added a TODO comment above `kpiCards` export clarifying they are placeholders.
+
+## Key Decisions (and alternatives considered)
+
+- **Decision:** keep KPI mock data unchanged.
+  - **Why:** request scope is watchlist backend wiring only.
+  - **Alternative:** wire KPIs now (would require backend portfolio metrics not in Phase 1).
+
+## Assumptions
+
+- KPI card redesign/data source is deferred to a later implementation phase.
+
+## Failure Modes
+
+- No runtime risk; this is documentation-only guidance.
+
+## How to Test (commands + steps)
+
+1. Open dashboard.
+2. Confirm KPI cards still render as before.
+
+## Next Steps
+
+- Implement real KPI endpoint(s) and replace static `kpiCards` once portfolio metrics are available.
+
+## Verification Checklist
+
+1. [ ] KPI cards still render in dashboard.
+2. [ ] TODO comment is present above `kpiCards`.

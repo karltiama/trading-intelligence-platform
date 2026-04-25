@@ -32,13 +32,34 @@ enum RunStatus {
 }
 
 model Symbol {
+  id         String       @id @default(cuid())
+  ticker     String       @unique
+  name       String?
+  isActive   Boolean      @default(true)
+  assetType  String?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  candles    Candle[]
+  signals    Signal[]
+  dailyPrices DailyPrice[]
+}
+
+model DailyPrice {
   id        String   @id @default(cuid())
-  ticker    String   @unique
-  name      String
+  symbolId  String
+  date      DateTime @db.Date
+  open      Decimal  @db.Decimal(18, 8)
+  high      Decimal  @db.Decimal(18, 8)
+  low       Decimal  @db.Decimal(18, 8)
+  close     Decimal  @db.Decimal(18, 8)
+  volume    Decimal  @db.Decimal(20, 8)
+  source    String   @default("alpaca")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  candles   Candle[]
-  signals   Signal[]
+  symbol    Symbol   @relation(fields: [symbolId], references: [id], onDelete: Cascade)
+
+  @@unique([symbolId, date])
+  @@index([symbolId, date])
 }
 
 model Candle {

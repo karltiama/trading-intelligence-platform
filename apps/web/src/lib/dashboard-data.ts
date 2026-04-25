@@ -34,6 +34,7 @@ export type KpiCard = {
   hint?: string;
 };
 
+// TODO: Replace with portfolio metrics in later phase.
 export const kpiCards: KpiCard[] = [
   {
     id: "portfolio-value",

@@ -1,0 +1,86 @@
+---
+title: Phase 1 market data pipeline (Alpaca → Prisma → dashboard API)
+date: 2026-04-24
+tags: [nestjs, prisma, alpaca, phase-1, neon]
+---
+
+## Context
+
+Phase 1 moves from “Alpaca straight to the client” to a proper pipeline: sync writes `DailyPrice` rows in Postgres (Neon), and the dashboard reads only from the database.
+
+## Goal
+
+- Prisma models: `Symbol` (optional `name`, `assetType`) + `DailyPrice` with `@@unique([symbolId, date])`.
+- `syncDailyBars` / `syncDefaultSymbols` using existing `AlpacaClient`.
+- `POST /market-data/sync` and `POST /market-data/sync/:symbol`.
+- `GET /dashboard/market-summary` from DB only (latest bar + simple day-over-day % and trend).
+
+## Files Changed
+
+- `apps/api/prisma/schema.prisma`
+- `apps/api/prisma/migrations/20260424193000_add_daily_price_pipeline/migration.sql`
+- `apps/api/src/modules/market-data/market-data.constants.ts` (new)
+- `apps/api/src/modules/market-data/bar-date.util.ts` (new)
+- `apps/api/src/modules/market-data/market-data.repository.ts` (new)
+- `apps/api/src/modules/market-data/market-data.service.ts`
+- `apps/api/src/modules/market-data/market-data.controller.ts`
+- `apps/api/src/modules/market-data/market-data.module.ts`
+- `apps/api/src/modules/dashboard/dashboard.module.ts` (new)
+- `apps/api/src/modules/dashboard/dashboard.controller.ts` (new)
+- `apps/api/src/modules/dashboard/dashboard.service.ts` (new)
+- `apps/api/src/modules/dashboard/dashboard.types.ts` (new)
+- `apps/api/src/modules/dashboard/market-summary.mapper.ts` (new)
+- `apps/api/src/modules/dashboard/market-summary.mapper.spec.ts` (new)
+- `apps/api/src/app.module.ts`
+
+## Implementation Notes (key logic explained)
+
+- **Money / OHLCV:** `DailyPrice` uses `Decimal` for OHLC and volume (same convention as `Candle`), not JS `number` in Prisma.
+- **Bar date:** Alpaca’s bar `t` is normalized to a **UTC calendar date** for `DATE` columns via `utcCalendarDateFromIso`.
+- **Upserts:** One Prisma `$transaction` of per-row `dailyPrice.upsert` on `symbolId_date` to avoid duplicates and keep retries safe.
+- **Market summary:** Repository loads recent rows in a bounded window, keeps **at most two rows per symbol** (latest + prior) in one ordered scan, then the mapper computes `changePercent` and `Bullish` / `Bearish` / `Neutral`.
+- **Default sync:** Sequential loop over `AAPL`, `MSFT`, `SPY`, `NVDA`, `META` so we are gentler on Alpaca rate limits than `Promise.all`; per-symbol failures are captured in the JSON payload instead of failing the whole batch.
+
+## Key Decisions (and alternatives considered)
+
+- **Repository in `market-data` consumed by `dashboard`:** avoids duplicating Prisma queries while keeping all Prisma access in `*.repository.ts` per project rules. Alternative: a dedicated `dashboard.repository.ts` (more files, similar query).
+- **`Symbol.name` made optional:** matches the Phase 1 spec and keeps `upsert` creates minimal (`ticker` only). Existing rows stay valid after `ALTER … DROP NOT NULL`.
+- **No new npm dependencies:** query validation uses small inline checks (project does not yet use `class-validator` / global `ValidationPipe`).
+
+## Assumptions
+
+- `DATABASE_URL` points at a Postgres (Neon) instance where migrations can run.
+- Alpaca env vars remain the single source of credentials (`ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, optional `ALPACA_BASE_URL`).
+
+## Failure Modes
+
+- **Migration not applied:** Prisma client expects `DailyPrice` / nullable `Symbol.name` → runtime errors on sync or query.
+- **Alpaca 429 / outage:** `syncDailySymbols` entries return `ok: false` with message; single-symbol sync throws (caller sees 502 from Alpaca translation where applicable).
+- **Large `limit` on sync:** many upserts in one transaction → long DB transaction / memory use; tune `limit` or batch later if needed.
+
+## How to Test (commands + steps)
+
+1. From repo root: `npm run db:migrate` (or in `apps/api`: `npx prisma migrate deploy` for production-like apply).
+2. `npm run db:generate` if you only changed schema locally without migrate.
+3. `npm run build:api` — should pass.
+4. `npm run test:api` — includes `market-summary.mapper.spec.ts`.
+5. Run API (`npm run dev:api`), then:
+   - `POST http://localhost:3001/market-data/sync` (default symbols).
+   - `POST http://localhost:3001/market-data/sync/AAPL?limit=60`.
+   - `GET http://localhost:3001/dashboard/market-summary`.
+
+## Next Steps
+
+- Point the Next.js dashboard at `GET /dashboard/market-summary` and remove direct Alpaca usage from the UI.
+- Add auth / API key on sync routes before any public deployment.
+- Optional: batch upserts or `createMany` + conflict handling if sync volume grows.
+
+## Verification Checklist
+
+1. [ ] `npx prisma migrate deploy` (or `migrate dev`) succeeds against your Neon URL.
+2. [ ] `npm run build:api` completes with no TypeScript errors.
+3. [ ] `POST /market-data/sync` returns per-symbol results and DB rows appear in Prisma Studio or SQL.
+4. [ ] `GET /dashboard/market-summary` returns JSON **without** calling Alpaca (disconnect Alpaca keys temporarily to confirm empty or stale DB-only behavior after a successful sync).
+5. [ ] Re-running sync for the same dates updates rows (no duplicate `(symbolId, date)` errors).
+6. [ ] CORS still allows your Next dev origin if you call the API from the browser.
+7. [ ] Existing `GET /market-data/:symbol/bars` still works for debugging Alpaca responses.

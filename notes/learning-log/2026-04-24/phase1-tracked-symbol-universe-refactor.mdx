@@ -1,0 +1,105 @@
+---
+title: Phase 1 tracked symbol universe refactor
+date: 2026-04-24
+tags: [nestjs, prisma, market-data, symbols, phase-1]
+---
+
+## Context
+
+Phase 1 already had Alpaca daily sync + `DailyPrice` persistence. The next step is controlling the symbol universe so we do not attempt to sync the entire market.
+
+## Goal
+
+Refactor backend sync to:
+- track symbols in DB with an `isActive` flag,
+- sync only active symbols,
+- seed default symbols safely,
+- expose simple symbol management endpoints.
+
+## Files Changed
+
+- `apps/api/prisma/schema.prisma`
+- `apps/api/prisma/migrations/20260424234500_add_symbol_is_active/migration.sql`
+- `apps/api/src/modules/market-data/market-data.constants.ts`
+- `apps/api/src/modules/market-data/market-data.repository.ts`
+- `apps/api/src/modules/market-data/market-data.service.ts`
+- `apps/api/src/app.module.ts`
+- `apps/api/src/modules/symbols/symbols.module.ts`
+- `apps/api/src/modules/symbols/symbols.service.ts`
+- `apps/api/src/modules/symbols/symbols.controller.ts`
+
+## Implementation Notes (key logic explained)
+
+- Added `Symbol.isActive` (default `true`) so symbol inclusion is data-driven.
+- Added repository methods:
+  - `seedDefaultSymbols()`,
+  - `findActiveSymbols()`,
+  - `listTrackedSymbols()`,
+  - `createTrackedSymbol()`,
+  - `toggleSymbolActive()`.
+- Updated `POST /market-data/sync` behavior to:
+  1) seed default symbols if missing,
+  2) query active symbols,
+  3) sync only those symbols,
+  4) return aggregate summary: `{ message, symbolsProcessed, rowsUpserted }`.
+- Added optional symbols endpoints:
+  - `GET /symbols`,
+  - `POST /symbols`,
+  - `POST /symbols/bootstrap-defaults`,
+  - `PATCH /symbols/:ticker/toggle`.
+
+## Key Decisions (and alternatives considered)
+
+- **Decision:** keep symbol management in a separate `symbols` module while reusing `MarketDataRepository`.
+  - **Why:** keeps routes clear and avoids duplicating Prisma access.
+  - **Alternative:** place symbol routes in `market-data.controller.ts` (simpler file count but mixes concerns).
+- **Decision:** seed defaults inside `/market-data/sync` and via explicit `/symbols/bootstrap-defaults`.
+  - **Why:** safe bootstrap and idempotent operation.
+  - **Alternative:** only CLI/manual seed step (more setup friction).
+
+## Assumptions
+
+- `Symbol.assetType` is still optional and can be filled later.
+- Existing `DailyPrice` pipeline remains source of truth for dashboard summary.
+- Sync should currently stop on first hard failure (future enhancement: per-symbol failure reporting for active universe).
+
+## Failure Modes
+
+- If migration is not applied, `isActive` queries fail at runtime.
+- Invalid ticker input (empty string) is rejected with `BadRequestException`.
+- Alpaca/API errors during active symbol sync bubble up from current service flow.
+
+## How to Test (commands + steps)
+
+1. Apply migration:
+   - `cd apps/api`
+   - `npx prisma migrate deploy` (or `npx prisma migrate dev` in local dev)
+2. Build + lint + test:
+   - `npm run lint:api`
+   - `npm run build:api`
+   - `npm run test:api`
+3. Start API:
+   - `npm run dev:api`
+4. Seed defaults:
+   - `POST /symbols/bootstrap-defaults`
+5. Verify tracked symbols:
+   - `GET /symbols`
+6. Toggle one symbol:
+   - `PATCH /symbols/NVDA/toggle`
+7. Run sync:
+   - `POST /market-data/sync`
+   - Confirm response has `message`, `symbolsProcessed`, and `rowsUpserted`.
+
+## Next Steps
+
+- Add DTO + `class-validator` for symbol payloads once global validation is enabled.
+- Add unit tests for `SymbolsService` and sync summary behavior.
+- Add scheduled sync job that only targets active symbols.
+
+## Verification Checklist
+
+1. [ ] Migration `20260424234500_add_symbol_is_active` is applied successfully.
+2. [ ] `GET /symbols` shows defaults after bootstrap.
+3. [ ] Toggling a symbol updates `isActive` and reduces/increases `symbolsProcessed` on sync.
+4. [ ] `POST /market-data/sync` syncs only active tickers.
+5. [ ] `GET /dashboard/market-summary` still returns DB-backed rows after sync.
