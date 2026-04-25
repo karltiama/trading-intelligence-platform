@@ -4,8 +4,16 @@
   "workspaces": [
     "apps/*"
   ],
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "tailwindcss": "^4"
+  },
   "scripts": {
+    "dev": "npm run dev --workspace web",
     "dev:web": "npm run dev --workspace web",
+    "dev:webpack": "npm run dev --workspace web -- --webpack",
+    "preview:web": "npm run build --workspace web && npm run start --workspace web",
+    "start:web": "npm run start --workspace web",
     "dev:api": "npm run start:dev --workspace api",
     "build:api": "npm run build --workspace api",
     "lint:api": "npm run lint --workspace api",
