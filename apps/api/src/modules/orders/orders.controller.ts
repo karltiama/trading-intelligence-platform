@@ -30,6 +30,7 @@ export class OrdersController {
     @Body() body: PlaceOrderBody,
     @Headers('x-user-email') headerUserEmail?: string,
     @Query('userEmail') queryUserEmail?: string,
+    @Query('accountId') accountIdRaw?: string,
   ) {
     const symbol = body.symbol?.trim().toUpperCase();
     if (!symbol) {
@@ -45,14 +46,20 @@ export class OrdersController {
       throw new BadRequestException('quantity must be a number.');
     }
 
-    const userEmail = this.accountContextService.resolveUserEmail(
-      headerUserEmail ?? queryUserEmail,
+    const principal = this.accountContextService.resolvePrincipal({
+      headerUserEmail,
+      queryUserEmail,
+    });
+    const accountId = accountIdRaw?.trim() || undefined;
+    return this.ordersService.placeOrder(
+      {
+        symbol,
+        side: sideRaw as PaperOrderSide,
+        quantity: body.quantity,
+      },
+      principal.userEmail,
+      accountId,
     );
-    return this.ordersService.placeOrder({
-      symbol,
-      side: sideRaw as PaperOrderSide,
-      quantity: body.quantity,
-    }, userEmail);
   }
 
   @Post(':id/cancel')
@@ -60,15 +67,18 @@ export class OrdersController {
     @Param('id') orderId: string,
     @Headers('x-user-email') headerUserEmail?: string,
     @Query('userEmail') queryUserEmail?: string,
+    @Query('accountId') accountIdRaw?: string,
   ) {
     const id = orderId.trim();
     if (!id) {
       throw new BadRequestException('order id is required.');
     }
-    const userEmail = this.accountContextService.resolveUserEmail(
-      headerUserEmail ?? queryUserEmail,
-    );
-    return this.ordersService.cancelOrder(id, userEmail);
+    const principal = this.accountContextService.resolvePrincipal({
+      headerUserEmail,
+      queryUserEmail,
+    });
+    const accountId = accountIdRaw?.trim() || undefined;
+    return this.ordersService.cancelOrder(id, principal.userEmail, accountId);
   }
 
   @Get()
@@ -79,6 +89,8 @@ export class OrdersController {
     @Query('status') statusRaw?: string,
     @Query('limit') limitRaw?: string,
     @Query('offset') offsetRaw?: string,
+    @Query('cursor') cursorRaw?: string,
+    @Query('accountId') accountIdRaw?: string,
   ) {
     let limit: number | undefined;
     if (limitRaw) {
@@ -110,10 +122,23 @@ export class OrdersController {
     }
 
     const symbol = symbolRaw?.trim().toUpperCase() || undefined;
-    const userEmail = this.accountContextService.resolveUserEmail(
-      headerUserEmail ?? queryUserEmail,
-    );
-    return this.ordersService.listOrders(userEmail, {
+    const accountId = accountIdRaw?.trim() || undefined;
+    const principal = this.accountContextService.resolvePrincipal({
+      headerUserEmail,
+      queryUserEmail,
+    });
+    if (cursorRaw) {
+      return this.ordersService.listOrdersPage({
+        userEmail: principal.userEmail,
+        accountId,
+        symbol,
+        status,
+        limit: limit ?? 25,
+        cursor: cursorRaw,
+      });
+    }
+    return this.ordersService.listOrders(principal.userEmail, {
+      accountId,
       symbol,
       status,
       limit,

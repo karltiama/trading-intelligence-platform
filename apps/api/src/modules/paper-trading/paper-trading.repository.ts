@@ -16,6 +16,11 @@ export type PaperAccountState = {
   currency: string;
 };
 
+export type ResolveAccountInput = {
+  userEmail: string;
+  accountId?: string;
+};
+
 export type PaperSymbolQuote = {
   symbolId: string;
   ticker: string;
@@ -51,6 +56,8 @@ export type PaperOrderListFilters = {
   status?: PaperOrderStatus;
   limit?: number;
   offset?: number;
+  cursorRequestedAt?: Date;
+  cursorOrderId?: string;
 };
 
 export type PaperPositionListRow = {
@@ -163,6 +170,33 @@ export class PaperTradingRepository {
         startingCash: DEFAULT_STARTING_CASH,
         cashBalance: DEFAULT_STARTING_CASH,
         currency: DEFAULT_CURRENCY,
+      },
+      select: {
+        id: true,
+        startingCash: true,
+        cashBalance: true,
+        currency: true,
+      },
+    });
+  }
+
+  async resolveAccountForUser(
+    input: ResolveAccountInput,
+  ): Promise<PaperAccountState | null> {
+    const normalizedEmail = input.userEmail.trim().toLowerCase();
+    if (!normalizedEmail) {
+      return null;
+    }
+
+    if (!input.accountId) {
+      return this.getOrCreateAccountForUserEmail(normalizedEmail);
+    }
+
+    const userId = await this.getOrCreateUserIdByEmail(normalizedEmail);
+    return this.prisma.paperAccount.findFirst({
+      where: {
+        id: input.accountId,
+        userId,
       },
       select: {
         id: true,
@@ -350,6 +384,19 @@ export class PaperTradingRepository {
     accountId: string,
     filters: PaperOrderListFilters = {},
   ): Promise<PaperOrderListRow[]> {
+    const cursorWhere =
+      filters.cursorRequestedAt && filters.cursorOrderId
+        ? {
+            OR: [
+              { requestedAt: { lt: filters.cursorRequestedAt } },
+              {
+                requestedAt: filters.cursorRequestedAt,
+                id: { lt: filters.cursorOrderId },
+              },
+            ],
+          }
+        : undefined;
+
     const rows = await this.prisma.paperOrder.findMany({
       where: {
         accountId,
@@ -357,8 +404,9 @@ export class PaperTradingRepository {
         symbol: filters.symbol
           ? { ticker: filters.symbol.toUpperCase() }
           : undefined,
+        ...cursorWhere,
       },
-      orderBy: { requestedAt: 'desc' },
+      orderBy: [{ requestedAt: 'desc' }, { id: 'desc' }],
       take: filters.limit,
       skip: filters.offset ?? 0,
       select: {

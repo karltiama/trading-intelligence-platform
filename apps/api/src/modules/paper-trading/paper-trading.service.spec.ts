@@ -4,12 +4,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { AuditService } from '../audit/audit.service';
 import { PaperTradingRepository } from './paper-trading.repository';
 import { PaperTradingService } from './paper-trading.service';
 
 describe('PaperTradingService', () => {
   const repository = {
-    getOrCreateAccountForUserEmail: jest.fn(),
+    resolveAccountForUser: jest.fn(),
     findSymbolQuote: jest.fn(),
     findPosition: jest.fn(),
     createFilledOrder: jest.fn(),
@@ -19,14 +20,19 @@ describe('PaperTradingService', () => {
     cancelNewOrderForAccount: jest.fn(),
   } as unknown as PaperTradingRepository;
 
-  const service = new PaperTradingService(repository);
+  const auditService = {
+    recordEvent: jest.fn(),
+  } as unknown as AuditService;
+
+  const service = new PaperTradingService(repository, auditService);
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (auditService.recordEvent as jest.Mock).mockResolvedValue(undefined);
   });
 
   it('fills a BUY market order immediately and updates cash', async () => {
-    (repository.getOrCreateAccountForUserEmail as jest.Mock).mockResolvedValue({
+    (repository.resolveAccountForUser as jest.Mock).mockResolvedValue({
       id: 'acct-1',
       startingCash: new Prisma.Decimal(100000),
       cashBalance: new Prisma.Decimal(1000),
@@ -45,11 +51,14 @@ describe('PaperTradingService', () => {
     (repository.updateAccountCash as jest.Mock).mockResolvedValue(undefined);
     (repository.upsertPosition as jest.Mock).mockResolvedValue(undefined);
 
-    const result = await service.placeMarketOrder({
-      symbol: 'aapl',
-      side: 'BUY',
-      quantity: 5,
-    });
+    const result = await service.placeMarketOrder(
+      {
+        symbol: 'aapl',
+        side: 'BUY',
+        quantity: 5,
+      },
+      'paper-spec@local.test',
+    );
 
     expect(result.status).toBe('FILLED');
     expect(result.fillPrice).toBe(100);
@@ -58,7 +67,7 @@ describe('PaperTradingService', () => {
   });
 
   it('rejects BUY when cash is insufficient', async () => {
-    (repository.getOrCreateAccountForUserEmail as jest.Mock).mockResolvedValue({
+    (repository.resolveAccountForUser as jest.Mock).mockResolvedValue({
       id: 'acct-1',
       startingCash: new Prisma.Decimal(100000),
       cashBalance: new Prisma.Decimal(100),
@@ -76,12 +85,12 @@ describe('PaperTradingService', () => {
         symbol: 'AAPL',
         side: 'BUY',
         quantity: 2,
-      }),
+      }, 'paper-spec@local.test'),
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
   it('rejects SELL when position quantity is missing (shorting disabled)', async () => {
-    (repository.getOrCreateAccountForUserEmail as jest.Mock).mockResolvedValue({
+    (repository.resolveAccountForUser as jest.Mock).mockResolvedValue({
       id: 'acct-1',
       startingCash: new Prisma.Decimal(100000),
       cashBalance: new Prisma.Decimal(1000),
@@ -99,12 +108,12 @@ describe('PaperTradingService', () => {
         symbol: 'AAPL',
         side: 'SELL',
         quantity: 1,
-      }),
+      }, 'paper-spec@local.test'),
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
   it('rejects unknown symbol lookup', async () => {
-    (repository.getOrCreateAccountForUserEmail as jest.Mock).mockResolvedValue({
+    (repository.resolveAccountForUser as jest.Mock).mockResolvedValue({
       id: 'acct-1',
       startingCash: new Prisma.Decimal(100000),
       cashBalance: new Prisma.Decimal(1000),
@@ -117,12 +126,12 @@ describe('PaperTradingService', () => {
         symbol: 'NOPE',
         side: 'BUY',
         quantity: 1,
-      }),
+      }, 'paper-spec@local.test'),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('rejects cancel when order is already filled', async () => {
-    (repository.getOrCreateAccountForUserEmail as jest.Mock).mockResolvedValue({
+    (repository.resolveAccountForUser as jest.Mock).mockResolvedValue({
       id: 'acct-1',
       startingCash: new Prisma.Decimal(100000),
       cashBalance: new Prisma.Decimal(1000),
@@ -133,7 +142,9 @@ describe('PaperTradingService', () => {
       status: 'FILLED',
     });
 
-    await expect(service.cancelOrder('ord-1')).rejects.toBeInstanceOf(
+    await expect(
+      service.cancelOrder('ord-1', 'paper-spec@local.test'),
+    ).rejects.toBeInstanceOf(
       ConflictException,
     );
   });
@@ -144,7 +155,7 @@ describe('PaperTradingService', () => {
         symbol: 'AAPL',
         side: 'BUY',
         quantity: 0,
-      }),
+      }, 'paper-spec@local.test'),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

@@ -13,21 +13,27 @@ export class PortfolioController {
   getPositions(
     @Headers('x-user-email') headerUserEmail?: string,
     @Query('userEmail') queryUserEmail?: string,
+    @Query('accountId') accountIdRaw?: string,
   ) {
-    const userEmail = this.accountContextService.resolveUserEmail(
-      headerUserEmail ?? queryUserEmail,
-    );
-    return this.portfolioService.getPositions(userEmail);
+    const principal = this.accountContextService.resolvePrincipal({
+      headerUserEmail,
+      queryUserEmail,
+    });
+    const accountId = accountIdRaw?.trim() || undefined;
+    return this.portfolioService.getPositions(principal.userEmail, accountId);
   }
 
   @Get('summary')
   getSummary(
     @Headers('x-user-email') headerUserEmail?: string,
     @Query('userEmail') queryUserEmail?: string,
+    @Query('accountId') accountIdRaw?: string,
   ) {
-    const userEmail = this.accountContextService.resolveUserEmail(
-      headerUserEmail ?? queryUserEmail,
-    );
-    return this.portfolioService.getSummary(userEmail);
+    const principal = this.accountContextService.resolvePrincipal({
+      headerUserEmail,
+      queryUserEmail,
+    });
+    const accountId = accountIdRaw?.trim() || undefined;
+    return this.portfolioService.getSummary(principal.userEmail, accountId);
   }
 }

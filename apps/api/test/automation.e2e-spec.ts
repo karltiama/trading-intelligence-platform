@@ -123,6 +123,25 @@ describe('AutomationController (e2e)', () => {
       where: { symbolId: symbol.id },
     });
     expect(placedOrderCount).toBe(1);
+
+    const started = await prisma.auditEvent.findFirst({
+      where: {
+        eventType: 'AUTOMATION_RUN_STARTED',
+        userEmail,
+        resourceId: runId,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    const completed = await prisma.auditEvent.findFirst({
+      where: {
+        eventType: 'AUTOMATION_RUN_COMPLETED',
+        userEmail,
+        resourceId: runId,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(started).not.toBeNull();
+    expect(completed).not.toBeNull();
   });
 
   it('records risk-rejected signal without placing order', async () => {
@@ -183,6 +202,15 @@ describe('AutomationController (e2e)', () => {
       where: { symbolId: symbol.id },
     });
     expect(placedOrderCount).toBe(0);
+
+    const rejectedAudit = await prisma.auditEvent.findFirst({
+      where: {
+        eventType: 'AUTOMATION_SIGNAL_REJECTED_RISK',
+        userEmail,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(rejectedAudit).not.toBeNull();
   });
 
   it('supports run list filters/pagination and ownership-safe not found', async () => {
@@ -233,6 +261,212 @@ describe('AutomationController (e2e)', () => {
       .expect(404);
   });
 
+  it('rejects explicit foreign account selection on trigger', async () => {
+    const symbol = await prisma.symbol.findUnique({
+      where: { ticker },
+      select: { id: true },
+    });
+    if (!symbol) {
+      throw new Error('Expected seeded symbol.');
+    }
+
+    const foreignUser = await prisma.user.create({
+      data: {
+        email: `automation-foreign-${Date.now()}@local.test`,
+        displayName: 'Automation Foreign',
+      },
+      select: { id: true },
+    });
+    const foreignAccount = await prisma.paperAccount.create({
+      data: {
+        userId: foreignUser.id,
+        startingCash: new Prisma.Decimal(100000),
+        cashBalance: new Prisma.Decimal(100000),
+        currency: 'USD',
+      },
+      select: { id: true },
+    });
+
+    await request(app.getHttpServer())
+      .post(`/automation/runs?accountId=${foreignAccount.id}`)
+      .set('x-user-email', userEmail)
+      .send({
+        strategy: 'foreign-account-trigger',
+        signals: [
+          {
+            symbolId: symbol.id,
+            symbol: ticker,
+            side: 'BUY',
+            signalAt: '2026-04-25T15:00:00.000Z',
+            quantity: 1,
+          },
+        ],
+      })
+      .expect(404);
+
+    await prisma.paperAccount.deleteMany({ where: { id: foreignAccount.id } });
+    await prisma.user.deleteMany({ where: { id: foreignUser.id } });
+  });
+
+  it('enforces disabled guardrail strategy', async () => {
+    const symbol = await prisma.symbol.findUnique({
+      where: { ticker },
+      select: { id: true },
+    });
+    if (!symbol) {
+      throw new Error('Expected seeded symbol.');
+    }
+
+    await request(app.getHttpServer())
+      .post('/automation/guardrails/disabled-strategy')
+      .set('x-user-email', userEmail)
+      .send({ enabled: false })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/automation/runs')
+      .set('x-user-email', userEmail)
+      .send({
+        strategy: 'disabled-strategy',
+        signals: [
+          {
+            symbolId: symbol.id,
+            symbol: ticker,
+            side: 'BUY',
+            signalAt: '2026-04-25T16:00:00.000Z',
+            quantity: 1,
+          },
+        ],
+      })
+      .expect(409);
+  });
+
+  it('enforces cooldown guardrail strategy', async () => {
+    const symbol = await prisma.symbol.findUnique({
+      where: { ticker },
+      select: { id: true },
+    });
+    if (!symbol) {
+      throw new Error('Expected seeded symbol.');
+    }
+
+    await request(app.getHttpServer())
+      .post('/automation/guardrails/cooldown-strategy')
+      .set('x-user-email', userEmail)
+      .send({ enabled: true, cooldownSeconds: 300 })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/automation/runs')
+      .set('x-user-email', userEmail)
+      .send({
+        strategy: 'cooldown-strategy',
+        signals: [
+          {
+            symbolId: symbol.id,
+            symbol: ticker,
+            side: 'BUY',
+            signalAt: '2026-04-25T16:05:00.000Z',
+            quantity: 1,
+          },
+        ],
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/automation/runs')
+      .set('x-user-email', userEmail)
+      .send({
+        strategy: 'cooldown-strategy',
+        signals: [
+          {
+            symbolId: symbol.id,
+            symbol: ticker,
+            side: 'BUY',
+            signalAt: '2026-04-25T16:06:00.000Z',
+            quantity: 1,
+          },
+        ],
+      })
+      .expect(409);
+  });
+
+  it('supports cursor pagination for run list without overlap', async () => {
+    const symbol = await prisma.symbol.findUnique({
+      where: { ticker },
+      select: { id: true },
+    });
+    if (!symbol) {
+      throw new Error('Expected seeded symbol.');
+    }
+
+    await request(app.getHttpServer())
+      .post('/automation/runs')
+      .set('x-user-email', userEmail)
+      .send({
+        strategy: 'cursor-strategy-a',
+        signals: [
+          {
+            symbolId: symbol.id,
+            symbol: ticker,
+            side: 'BUY',
+            signalAt: '2026-04-25T16:10:00.000Z',
+            quantity: 1,
+          },
+        ],
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/automation/runs')
+      .set('x-user-email', userEmail)
+      .send({
+        strategy: 'cursor-strategy-b',
+        signals: [
+          {
+            symbolId: symbol.id,
+            symbol: ticker,
+            side: 'BUY',
+            signalAt: '2026-04-25T16:11:00.000Z',
+            quantity: 1,
+          },
+        ],
+      })
+      .expect(201);
+
+    const invalidCursor = await request(app.getHttpServer())
+      .get('/automation/runs?limit=1&cursor=bad-cursor')
+      .set('x-user-email', userEmail)
+      .expect(400);
+    expect(String(invalidCursor.body.message)).toContain('invalid cursor');
+
+    const list = await request(app.getHttpServer())
+      .get('/automation/runs?limit=5')
+      .set('x-user-email', userEmail)
+      .expect(200);
+    expect(Array.isArray(list.body)).toBe(true);
+    expect(list.body.length).toBeGreaterThanOrEqual(2);
+
+    const cursor = Buffer.from(
+      JSON.stringify({
+        startedAt: list.body[0].startedAt,
+        runId: list.body[0].runId,
+      }),
+      'utf8',
+    ).toString('base64url');
+
+    const paged = await request(app.getHttpServer())
+      .get(`/automation/runs?limit=5&cursor=${encodeURIComponent(cursor)}`)
+      .set('x-user-email', userEmail)
+      .expect(200);
+    expect(Array.isArray(paged.body.items)).toBe(true);
+    expect(
+      paged.body.items.some(
+        (row: { runId: string }) => row.runId === list.body[0].runId,
+      ),
+    ).toBe(false);
+  });
+
   it('rejects automation run trigger without user context', async () => {
     const symbol = await prisma.symbol.findUnique({
       where: { ticker },
@@ -274,10 +508,25 @@ describe('AutomationController (e2e)', () => {
       await prisma.paperPosition.deleteMany({ where: { symbolId: symbol.id } });
     }
 
+    await prisma.auditEvent.deleteMany({
+      where: { userEmail },
+    });
+    await prisma.automationGuardrail.deleteMany({
+      where: { userEmail },
+    });
     await prisma.strategyRun.deleteMany({
       where: {
         strategy: {
-          in: ['mean-reversion', 'risk-guardrail', 'filterable-strategy'],
+          in: [
+            'mean-reversion',
+            'risk-guardrail',
+            'filterable-strategy',
+            'foreign-account-trigger',
+            'disabled-strategy',
+            'cooldown-strategy',
+            'cursor-strategy-a',
+            'cursor-strategy-b',
+          ],
         },
       },
     });

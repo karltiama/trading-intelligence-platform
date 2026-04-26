@@ -25,6 +25,11 @@ type TriggerRunBody = {
   signals?: RunSignalBody[];
 };
 
+type UpdateGuardrailBody = {
+  enabled?: boolean;
+  cooldownSeconds?: number;
+};
+
 @Controller('automation')
 export class AutomationController {
   constructor(
@@ -37,6 +42,7 @@ export class AutomationController {
     @Body() body: TriggerRunBody,
     @Headers('x-user-email') headerUserEmail?: string,
     @Query('userEmail') queryUserEmail?: string,
+    @Query('accountId') accountIdRaw?: string,
   ) {
     const strategy = body.strategy?.trim();
     if (!strategy) {
@@ -81,13 +87,70 @@ export class AutomationController {
       };
     });
 
-    const userEmail = this.accountContextService.resolveUserEmail(
-      headerUserEmail ?? queryUserEmail,
-    );
+    const accountId = accountIdRaw?.trim() || undefined;
+    const principal = this.accountContextService.resolvePrincipal({
+      headerUserEmail,
+      queryUserEmail,
+    });
     return this.automationService.triggerManualRun({
       strategy,
       signals,
-      userEmail,
+      userEmail: principal.userEmail,
+      accountId,
+    });
+  }
+
+  @Get('guardrails/:strategy')
+  getGuardrail(
+    @Param('strategy') strategyRaw: string,
+    @Headers('x-user-email') headerUserEmail?: string,
+    @Query('userEmail') queryUserEmail?: string,
+  ) {
+    const strategy = strategyRaw.trim();
+    if (!strategy) {
+      throw new BadRequestException('strategy is required.');
+    }
+    const principal = this.accountContextService.resolvePrincipal({
+      headerUserEmail,
+      queryUserEmail,
+    });
+    return this.automationService.getGuardrail(principal.userEmail, strategy);
+  }
+
+  @Post('guardrails/:strategy')
+  updateGuardrail(
+    @Param('strategy') strategyRaw: string,
+    @Body() body: UpdateGuardrailBody,
+    @Headers('x-user-email') headerUserEmail?: string,
+    @Query('userEmail') queryUserEmail?: string,
+  ) {
+    const strategy = strategyRaw.trim();
+    if (!strategy) {
+      throw new BadRequestException('strategy is required.');
+    }
+    if (
+      body.enabled === undefined &&
+      body.cooldownSeconds === undefined
+    ) {
+      throw new BadRequestException(
+        'at least one of enabled or cooldownSeconds must be provided.',
+      );
+    }
+    if (
+      body.cooldownSeconds !== undefined &&
+      (!Number.isInteger(body.cooldownSeconds) || body.cooldownSeconds < 0)
+    ) {
+      throw new BadRequestException('cooldownSeconds must be an integer >= 0.');
+    }
+    const principal = this.accountContextService.resolvePrincipal({
+      headerUserEmail,
+      queryUserEmail,
+    });
+    return this.automationService.updateGuardrail({
+      userEmail: principal.userEmail,
+      strategy,
+      enabled: body.enabled,
+      cooldownSeconds: body.cooldownSeconds,
     });
   }
 
@@ -97,6 +160,8 @@ export class AutomationController {
     @Query('offset') offsetRaw?: string,
     @Query('status') statusRaw?: string,
     @Query('strategy') strategyRaw?: string,
+    @Query('cursor') cursorRaw?: string,
+    @Query('accountId') accountIdRaw?: string,
     @Headers('x-user-email') headerUserEmail?: string,
     @Query('userEmail') queryUserEmail?: string,
   ) {
@@ -135,15 +200,31 @@ export class AutomationController {
     }
 
     const strategy = strategyRaw?.trim() || undefined;
-    const userEmail = this.accountContextService.resolveUserEmail(
-      headerUserEmail ?? queryUserEmail,
-    );
-    return this.automationService.listRuns(userEmail, {
-      limit,
-      offset,
-      status,
-      strategy,
+    const accountId = accountIdRaw?.trim() || undefined;
+    const principal = this.accountContextService.resolvePrincipal({
+      headerUserEmail,
+      queryUserEmail,
     });
+    if (cursorRaw) {
+      return this.automationService.listRunsPage({
+        userEmail: principal.userEmail,
+        accountId,
+        strategy,
+        status,
+        limit,
+        cursor: cursorRaw,
+      });
+    }
+    return this.automationService.listRuns(
+      principal.userEmail,
+      {
+        limit,
+        offset,
+        status,
+        strategy,
+      },
+      accountId,
+    );
   }
 
   @Get('runs/:id')
@@ -151,15 +232,22 @@ export class AutomationController {
     @Param('id') runId: string,
     @Headers('x-user-email') headerUserEmail?: string,
     @Query('userEmail') queryUserEmail?: string,
+    @Query('accountId') accountIdRaw?: string,
   ) {
     const id = runId.trim();
     if (!id) {
       throw new BadRequestException('run id is required.');
     }
-    const userEmail = this.accountContextService.resolveUserEmail(
-      headerUserEmail ?? queryUserEmail,
+    const accountId = accountIdRaw?.trim() || undefined;
+    const principal = this.accountContextService.resolvePrincipal({
+      headerUserEmail,
+      queryUserEmail,
+    });
+    return this.automationService.getRunDetails(
+      id,
+      principal.userEmail,
+      accountId,
     );
-    return this.automationService.getRunDetails(id, userEmail);
   }
 
   @Get('runs/:id/signals')
@@ -167,14 +255,21 @@ export class AutomationController {
     @Param('id') runId: string,
     @Headers('x-user-email') headerUserEmail?: string,
     @Query('userEmail') queryUserEmail?: string,
+    @Query('accountId') accountIdRaw?: string,
   ) {
     const id = runId.trim();
     if (!id) {
       throw new BadRequestException('run id is required.');
     }
-    const userEmail = this.accountContextService.resolveUserEmail(
-      headerUserEmail ?? queryUserEmail,
+    const accountId = accountIdRaw?.trim() || undefined;
+    const principal = this.accountContextService.resolvePrincipal({
+      headerUserEmail,
+      queryUserEmail,
+    });
+    return this.automationService.listRunSignals(
+      id,
+      principal.userEmail,
+      accountId,
     );
-    return this.automationService.listRunSignals(id, userEmail);
   }
 }

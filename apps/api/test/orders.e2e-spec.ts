@@ -71,6 +71,16 @@ describe('OrdersController (e2e)', () => {
     });
     expect(row).toBeDefined();
     expect(row?.userEmail).toBe(userEmail);
+
+    const audit = await prisma.auditEvent.findFirst({
+      where: {
+        eventType: 'ORDER_PLACED',
+        userEmail,
+        resourceId: placed.body.orderId,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(audit).not.toBeNull();
   });
 
   it('rejects cancel for immediately filled market order', async () => {
@@ -174,6 +184,101 @@ describe('OrdersController (e2e)', () => {
       .get('/orders?limit=0')
       .set('x-user-email', userEmail)
       .expect(400);
+  });
+
+  it('supports explicit account selection and hides foreign accounts', async () => {
+    await request(app.getHttpServer())
+      .post('/orders')
+      .set('x-user-email', userEmail)
+      .send({
+        symbol: ticker,
+        side: 'BUY',
+        quantity: 1,
+      })
+      .expect(201);
+
+    const owner = await prisma.user.findUnique({
+      where: { email: userEmail },
+      select: { paperAccounts: { select: { id: true }, orderBy: { createdAt: 'asc' } } },
+    });
+    if (!owner?.paperAccounts[0]) {
+      throw new Error('Expected owner account to exist.');
+    }
+
+    await request(app.getHttpServer())
+      .get(`/orders?accountId=${owner.paperAccounts[0].id}`)
+      .set('x-user-email', userEmail)
+      .expect(200);
+
+    const foreignUser = await prisma.user.create({
+      data: {
+        email: `foreign-${Date.now()}@local.test`,
+        displayName: 'Foreign',
+      },
+      select: { id: true },
+    });
+    const foreignAccount = await prisma.paperAccount.create({
+      data: {
+        userId: foreignUser.id,
+        startingCash: new Prisma.Decimal(100000),
+        cashBalance: new Prisma.Decimal(100000),
+        currency: 'USD',
+      },
+      select: { id: true },
+    });
+
+    await request(app.getHttpServer())
+      .get(`/orders?accountId=${foreignAccount.id}`)
+      .set('x-user-email', userEmail)
+      .expect(404);
+
+    await prisma.paperAccount.deleteMany({ where: { id: foreignAccount.id } });
+    await prisma.user.deleteMany({ where: { id: foreignUser.id } });
+  });
+
+  it('supports cursor pagination without overlapping rows', async () => {
+    await request(app.getHttpServer())
+      .post('/orders')
+      .set('x-user-email', userEmail)
+      .send({ symbol: ticker, side: 'BUY', quantity: 1 })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post('/orders')
+      .set('x-user-email', userEmail)
+      .send({ symbol: ticker, side: 'BUY', quantity: 1 })
+      .expect(201);
+
+    const first = await request(app.getHttpServer())
+      .get('/orders?limit=2')
+      .set('x-user-email', userEmail)
+      .expect(200);
+    expect(Array.isArray(first.body)).toBe(true);
+    expect(first.body.length).toBeGreaterThanOrEqual(2);
+
+    const invalidCursor = await request(app.getHttpServer())
+      .get('/orders?limit=1&cursor=bad-cursor')
+      .set('x-user-email', userEmail)
+      .expect(400);
+    expect(String(invalidCursor.body.message)).toContain('invalid cursor');
+
+    const cursor = Buffer.from(
+      JSON.stringify({
+        requestedAt: first.body[0].requestedAt,
+        orderId: first.body[0].orderId,
+      }),
+      'utf8',
+    ).toString('base64url');
+
+    const paged = await request(app.getHttpServer())
+      .get(`/orders?limit=5&cursor=${encodeURIComponent(cursor)}`)
+      .set('x-user-email', userEmail)
+      .expect(200);
+    expect(Array.isArray(paged.body.items)).toBe(true);
+    expect(
+      paged.body.items.some(
+        (row: { orderId: string }) => row.orderId === first.body[0].orderId,
+      ),
+    ).toBe(false);
   });
 
   afterEach(async () => {

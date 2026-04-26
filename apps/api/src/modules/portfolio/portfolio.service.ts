@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PaperTradingRepository } from '../paper-trading/paper-trading.repository';
 
@@ -29,10 +29,21 @@ export type PortfolioSummary = {
 export class PortfolioService {
   constructor(private readonly paperTradingRepository: PaperTradingRepository) {}
 
-  async getPositions(userEmail: string): Promise<PortfolioPositionRow[]> {
-    const account = await this.paperTradingRepository.getOrCreateAccountForUserEmail(
+  async getPositions(
+    userEmail: string,
+    accountId?: string,
+  ): Promise<PortfolioPositionRow[]> {
+    const account = await this.paperTradingRepository.resolveAccountForUser({
       userEmail,
-    );
+      accountId,
+    });
+    if (!account) {
+      throw new NotFoundException(
+        accountId
+          ? `Paper account not found for current user: ${accountId}`
+          : 'Paper account not found for current user.',
+      );
+    }
     const positions = await this.paperTradingRepository.listPositions(account.id);
     const latestPrices = await this.paperTradingRepository.findLatestPricesForSymbols(
       positions.map((p) => p.symbolId),
@@ -72,10 +83,18 @@ export class PortfolioService {
     });
   }
 
-  async getSummary(userEmail: string): Promise<PortfolioSummary> {
-    const account = await this.paperTradingRepository.getOrCreateAccountForUserEmail(
+  async getSummary(userEmail: string, accountId?: string): Promise<PortfolioSummary> {
+    const account = await this.paperTradingRepository.resolveAccountForUser({
       userEmail,
-    );
+      accountId,
+    });
+    if (!account) {
+      throw new NotFoundException(
+        accountId
+          ? `Paper account not found for current user: ${accountId}`
+          : 'Paper account not found for current user.',
+      );
+    }
     const positions = await this.paperTradingRepository.listPositions(account.id);
     const latestPrices = await this.paperTradingRepository.findLatestPricesForSymbols(
       positions.map((p) => p.symbolId),

@@ -38,11 +38,23 @@ export type AutomationSignalExecutionRow = {
   updatedAt: Date;
 };
 
+export type AutomationGuardrailRow = {
+  id: string;
+  userEmail: string;
+  strategy: string;
+  enabled: boolean;
+  cooldownSeconds: number;
+  lastTriggeredAt: Date | null;
+  updatedAt: Date;
+};
+
 export type AutomationRunListFilters = {
   strategy?: string;
   status?: RunStatus;
   limit?: number;
   offset?: number;
+  cursorStartedAt?: Date;
+  cursorRunId?: string;
 };
 
 @Injectable()
@@ -65,6 +77,110 @@ export class AutomationRepository {
         strategy: true,
         status: true,
         startedAt: true,
+      },
+    });
+  }
+
+  async getOrCreateGuardrail(
+    userEmail: string,
+    strategy: string,
+  ): Promise<AutomationGuardrailRow> {
+    const existing = await this.prisma.automationGuardrail.findUnique({
+      where: {
+        userEmail_strategy: {
+          userEmail,
+          strategy,
+        },
+      },
+      select: {
+        id: true,
+        userEmail: true,
+        strategy: true,
+        enabled: true,
+        cooldownSeconds: true,
+        lastTriggeredAt: true,
+        updatedAt: true,
+      },
+    });
+    if (existing) {
+      return existing;
+    }
+
+    return this.prisma.automationGuardrail.create({
+      data: {
+        userEmail,
+        strategy,
+        enabled: true,
+        cooldownSeconds: 0,
+      },
+      select: {
+        id: true,
+        userEmail: true,
+        strategy: true,
+        enabled: true,
+        cooldownSeconds: true,
+        lastTriggeredAt: true,
+        updatedAt: true,
+      },
+    });
+  }
+
+  async updateGuardrail(input: {
+    userEmail: string;
+    strategy: string;
+    enabled?: boolean;
+    cooldownSeconds?: number;
+  }): Promise<AutomationGuardrailRow> {
+    return this.prisma.automationGuardrail.upsert({
+      where: {
+        userEmail_strategy: {
+          userEmail: input.userEmail,
+          strategy: input.strategy,
+        },
+      },
+      create: {
+        userEmail: input.userEmail,
+        strategy: input.strategy,
+        enabled: input.enabled ?? true,
+        cooldownSeconds: input.cooldownSeconds ?? 0,
+      },
+      update: {
+        enabled: input.enabled,
+        cooldownSeconds: input.cooldownSeconds,
+      },
+      select: {
+        id: true,
+        userEmail: true,
+        strategy: true,
+        enabled: true,
+        cooldownSeconds: true,
+        lastTriggeredAt: true,
+        updatedAt: true,
+      },
+    });
+  }
+
+  async touchGuardrailTriggered(input: {
+    userEmail: string;
+    strategy: string;
+    triggeredAt: Date;
+  }): Promise<void> {
+    await this.prisma.automationGuardrail.upsert({
+      where: {
+        userEmail_strategy: {
+          userEmail: input.userEmail,
+          strategy: input.strategy,
+        },
+      },
+      create: {
+        userEmail: input.userEmail,
+        strategy: input.strategy,
+        enabled: true,
+        cooldownSeconds: 0,
+        lastTriggeredAt: input.triggeredAt,
+      },
+      update: {
+        lastTriggeredAt: input.triggeredAt,
       },
     });
   }
@@ -155,13 +271,27 @@ export class AutomationRepository {
     userEmail: string,
     filters: AutomationRunListFilters = {},
   ): Promise<AutomationRunListRow[]> {
+    const cursorWhere =
+      filters.cursorStartedAt && filters.cursorRunId
+        ? {
+            OR: [
+              { startedAt: { lt: filters.cursorStartedAt } },
+              {
+                startedAt: filters.cursorStartedAt,
+                id: { lt: filters.cursorRunId },
+              },
+            ],
+          }
+        : undefined;
+
     return this.prisma.strategyRun.findMany({
       where: {
         userEmail,
         strategy: filters.strategy,
         status: filters.status,
+        ...cursorWhere,
       },
-      orderBy: { startedAt: 'desc' },
+      orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
       take: filters.limit ?? 25,
       skip: filters.offset ?? 0,
       select: {

@@ -54,6 +54,13 @@ enum SignalExecutionStatus {
   FAILED
 }
 
+enum AuditEventType {
+  ORDER_PLACED
+  AUTOMATION_RUN_STARTED
+  AUTOMATION_RUN_COMPLETED
+  AUTOMATION_SIGNAL_REJECTED_RISK
+}
+
 model Symbol {
   id             String          @id @default(cuid())
   ticker         String          @unique
@@ -252,4 +259,32 @@ model PaperAccountSnapshot {
   account           PaperAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   @@index([accountId, asOf])
+}
+
+model AuditEvent {
+  id         String         @id @default(cuid())
+  eventType  AuditEventType
+  userEmail  String
+  accountId  String?
+  resourceId String?
+  payload    Json
+  createdAt  DateTime       @default(now())
+
+  @@index([userEmail, createdAt])
+  @@index([accountId, createdAt])
+  @@index([eventType, createdAt])
+}
+
+model AutomationGuardrail {
+  id              String   @id @default(cuid())
+  userEmail       String
+  strategy        String
+  enabled         Boolean  @default(true)
+  cooldownSeconds Int      @default(0)
+  lastTriggeredAt DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([userEmail, strategy])
+  @@index([userEmail, updatedAt])
 }

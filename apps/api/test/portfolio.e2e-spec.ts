@@ -163,6 +163,33 @@ describe('PortfolioController (e2e)', () => {
     await request(app.getHttpServer()).get('/portfolio/summary').expect(400);
   });
 
+  it('returns not found for foreign explicit account selection', async () => {
+    const foreignUser = await prisma.user.create({
+      data: {
+        email: `portfolio-foreign-${Date.now()}@local.test`,
+        displayName: 'Portfolio Foreign',
+      },
+      select: { id: true },
+    });
+    const foreignAccount = await prisma.paperAccount.create({
+      data: {
+        userId: foreignUser.id,
+        startingCash: new Prisma.Decimal(100000),
+        cashBalance: new Prisma.Decimal(100000),
+        currency: 'USD',
+      },
+      select: { id: true },
+    });
+
+    await request(app.getHttpServer())
+      .get(`/portfolio/summary?accountId=${foreignAccount.id}`)
+      .set('x-user-email', userEmail)
+      .expect(404);
+
+    await prisma.paperAccount.deleteMany({ where: { id: foreignAccount.id } });
+    await prisma.user.deleteMany({ where: { id: foreignUser.id } });
+  });
+
   afterEach(async () => {
     if (!prisma) {
       return;

@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PaperOrderSide, PaperOrderStatus, Prisma } from '@prisma/client';
+import { AuditService } from '../audit/audit.service';
 import {
   PaperTradingRepository,
   type PaperOrderListFilters,
@@ -40,20 +41,27 @@ export type PaperOrderListItem = {
   canceledAt: string | null;
 };
 
+export type PaperOrderPage = {
+  items: PaperOrderListItem[];
+  nextCursor: { requestedAt: string; orderId: string } | null;
+};
+
 @Injectable()
 export class PaperTradingService {
-  constructor(private readonly paperTradingRepository: PaperTradingRepository) {}
+  constructor(
+    private readonly paperTradingRepository: PaperTradingRepository,
+    private readonly auditService: AuditService,
+  ) {}
 
   async placeMarketOrder(
     input: PlaceMarketOrderInput,
     userEmail: string,
+    accountId?: string,
   ): Promise<PlaceMarketOrderResult> {
     const ticker = this.normalizeTicker(input.symbol);
     const quantity = this.toPositiveQuantity(input.quantity);
 
-    const account = await this.paperTradingRepository.getOrCreateAccountForUserEmail(
-      userEmail,
-    );
+    const account = await this.resolveScopedAccount(userEmail, accountId);
     const symbolQuote = await this.paperTradingRepository.findSymbolQuote(ticker);
     if (!symbolQuote) {
       throw new NotFoundException(`Tracked symbol not found: ${ticker}`);
@@ -70,7 +78,7 @@ export class PaperTradingService {
     );
 
     if (input.side === 'BUY') {
-      return this.executeBuy({
+      const placed = await this.executeBuy({
         accountId: account.id,
         ticker,
         symbolId: symbolQuote.symbolId,
@@ -80,9 +88,15 @@ export class PaperTradingService {
         cashBalance: account.cashBalance,
         existingPosition,
       });
+      await this.recordOrderPlacedAudit({
+        userEmail,
+        accountId: account.id,
+        order: placed,
+      });
+      return placed;
     }
 
-    return this.executeSell({
+    const placed = await this.executeSell({
       accountId: account.id,
       ticker,
       symbolId: symbolQuote.symbolId,
@@ -92,15 +106,20 @@ export class PaperTradingService {
       cashBalance: account.cashBalance,
       existingPosition,
     });
+    await this.recordOrderPlacedAudit({
+      userEmail,
+      accountId: account.id,
+      order: placed,
+    });
+    return placed;
   }
 
   async cancelOrder(
     orderId: string,
     userEmail: string,
+    accountId?: string,
   ): Promise<{ orderId: string; status: 'CANCELED' }> {
-    const account = await this.paperTradingRepository.getOrCreateAccountForUserEmail(
-      userEmail,
-    );
+    const account = await this.resolveScopedAccount(userEmail, accountId);
     const existing = await this.paperTradingRepository.findOrderForAccount(
       account.id,
       orderId,
@@ -128,10 +147,9 @@ export class PaperTradingService {
   async listOrders(
     userEmail: string,
     filters: PaperOrderListFilters = {},
+    accountId?: string,
   ): Promise<PaperOrderListItem[]> {
-    const account = await this.paperTradingRepository.getOrCreateAccountForUserEmail(
-      userEmail,
-    );
+    const account = await this.resolveScopedAccount(userEmail, accountId);
     const rows = await this.paperTradingRepository.listOrders(account.id, filters);
     return rows.map((row) => ({
       orderId: row.id,
@@ -144,6 +162,46 @@ export class PaperTradingService {
       filledAt: row.filledAt?.toISOString() ?? null,
       canceledAt: row.canceledAt?.toISOString() ?? null,
     }));
+  }
+
+  async listOrdersPage(input: {
+    userEmail: string;
+    accountId?: string;
+    symbol?: string;
+    status?: PaperOrderStatus;
+    limit: number;
+    cursor?: { requestedAt: Date; orderId: string };
+  }): Promise<PaperOrderPage> {
+    const account = await this.resolveScopedAccount(input.userEmail, input.accountId);
+    const rows = await this.paperTradingRepository.listOrders(account.id, {
+      symbol: input.symbol,
+      status: input.status,
+      limit: input.limit + 1,
+      cursorRequestedAt: input.cursor?.requestedAt,
+      cursorOrderId: input.cursor?.orderId,
+    });
+
+    const hasMore = rows.length > input.limit;
+    const visibleRows = hasMore ? rows.slice(0, input.limit) : rows;
+    const items = visibleRows.map((row) => ({
+      orderId: row.id,
+      symbol: row.symbol,
+      side: row.side,
+      type: row.type,
+      status: row.status,
+      quantity: row.quantity.toNumber(),
+      requestedAt: row.requestedAt.toISOString(),
+      filledAt: row.filledAt?.toISOString() ?? null,
+      canceledAt: row.canceledAt?.toISOString() ?? null,
+    }));
+
+    const last = visibleRows[visibleRows.length - 1];
+    const nextCursor =
+      hasMore && last
+        ? { requestedAt: last.requestedAt.toISOString(), orderId: last.id }
+        : null;
+
+    return { items, nextCursor };
   }
 
   private async executeBuy(params: {
@@ -300,5 +358,45 @@ export class PaperTradingService {
       averageCost: weightedCost,
       realizedPnl: existing.realizedPnl,
     };
+  }
+
+  private async resolveScopedAccount(
+    userEmail: string,
+    accountId?: string,
+  ): Promise<{ id: string; cashBalance: Prisma.Decimal; currency: string }> {
+    const account = await this.paperTradingRepository.resolveAccountForUser({
+      userEmail,
+      accountId,
+    });
+    if (!account) {
+      throw new NotFoundException(
+        accountId
+          ? `Paper account not found for current user: ${accountId}`
+          : 'Paper account not found for current user.',
+      );
+    }
+    return account;
+  }
+
+  private async recordOrderPlacedAudit(params: {
+    userEmail: string;
+    accountId: string;
+    order: PlaceMarketOrderResult;
+  }): Promise<void> {
+    await this.auditService.recordEvent({
+      eventType: 'ORDER_PLACED',
+      userEmail: params.userEmail,
+      accountId: params.accountId,
+      resourceId: params.order.orderId,
+      payload: {
+        symbol: params.order.symbol,
+        side: params.order.side,
+        status: params.order.status,
+        quantity: params.order.quantity,
+        fillPrice: params.order.fillPrice,
+        fillNotional: params.order.fillNotional,
+        cashBalance: params.order.cashBalance,
+      },
+    });
   }
 }

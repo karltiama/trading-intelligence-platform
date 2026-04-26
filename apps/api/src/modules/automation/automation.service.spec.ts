@@ -4,6 +4,8 @@ import {
   AutomationService,
   type AutomationSignalInput,
 } from './automation.service';
+import { AuditService } from '../audit/audit.service';
+import { PaperTradingRepository } from '../paper-trading/paper-trading.repository';
 import { PaperTradingService } from '../paper-trading/paper-trading.service';
 import { RiskService } from '../risk/risk.service';
 
@@ -11,6 +13,8 @@ describe('AutomationService', () => {
   const automationRepository = {
     createRun: jest.fn(),
     completeRun: jest.fn(),
+    getOrCreateGuardrail: jest.fn(),
+    touchGuardrailTriggered: jest.fn(),
     createSignalExecution: jest.fn(),
     markSignalExecutionPlaced: jest.fn(),
     markSignalExecutionRejectedRisk: jest.fn(),
@@ -21,14 +25,24 @@ describe('AutomationService', () => {
     placeMarketOrder: jest.fn(),
   } as unknown as PaperTradingService;
 
+  const paperTradingRepository = {
+    resolveAccountForUser: jest.fn(),
+  } as unknown as PaperTradingRepository;
+
   const riskService = {
     evaluateOrder: jest.fn(),
   } as unknown as RiskService;
 
+  const auditService = {
+    recordEvent: jest.fn(),
+  } as unknown as AuditService;
+
   const service = new AutomationService(
     automationRepository,
     paperTradingService,
+    paperTradingRepository,
     riskService,
+    auditService,
   );
 
   beforeEach(() => {
@@ -40,6 +54,18 @@ describe('AutomationService', () => {
       startedAt: new Date('2026-04-25T00:00:00.000Z'),
     });
     (automationRepository.completeRun as jest.Mock).mockResolvedValue(undefined);
+    (automationRepository.getOrCreateGuardrail as jest.Mock).mockResolvedValue({
+      id: 'guard-1',
+      userEmail: 'automation-spec@local.test',
+      strategy: 'mean-reversion',
+      enabled: true,
+      cooldownSeconds: 0,
+      lastTriggeredAt: null,
+      updatedAt: new Date('2026-04-25T00:00:00.000Z'),
+    });
+    (automationRepository.touchGuardrailTriggered as jest.Mock).mockResolvedValue(
+      undefined,
+    );
     (automationRepository.markSignalExecutionPlaced as jest.Mock).mockResolvedValue(
       undefined,
     );
@@ -51,6 +77,13 @@ describe('AutomationService', () => {
     );
     (riskService.evaluateOrder as jest.Mock).mockResolvedValue({
       allowed: true,
+    });
+    (auditService.recordEvent as jest.Mock).mockResolvedValue(undefined);
+    (paperTradingRepository.resolveAccountForUser as jest.Mock).mockResolvedValue({
+      id: 'acct-1',
+      startingCash: { toNumber: () => 100000 },
+      cashBalance: { toNumber: () => 100000 },
+      currency: 'USD',
     });
   });
 
@@ -91,6 +124,7 @@ describe('AutomationService', () => {
     const result = await service.executeRun({
       strategy: 'mean-reversion',
       signals,
+      userEmail: 'automation-spec@local.test',
     });
 
     expect(result.placed).toBe(1);
@@ -123,6 +157,7 @@ describe('AutomationService', () => {
     const result = await service.executeRun({
       strategy: 'breakout',
       signals,
+      userEmail: 'automation-spec@local.test',
     });
 
     expect(result.placed).toBe(0);
@@ -143,6 +178,7 @@ describe('AutomationService', () => {
       service.executeRun({
         strategy: '   ',
         signals: [],
+        userEmail: 'automation-spec@local.test',
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
@@ -169,6 +205,7 @@ describe('AutomationService', () => {
     const result = await service.executeRun({
       strategy: 'risk-test',
       signals,
+      userEmail: 'automation-spec@local.test',
     });
 
     expect(result.placed).toBe(0);

@@ -11,6 +11,7 @@ export type RiskCheckInput = {
   side: PaperOrderSide;
   quantity: number;
   userEmail: string;
+  accountId?: string;
 };
 
 export type RiskCheckResult =
@@ -36,9 +37,13 @@ export class RiskService {
       };
     }
 
-    const account = await this.paperTradingRepository.getOrCreateAccountForUserEmail(
-      input.userEmail,
-    );
+    const account = await this.paperTradingRepository.resolveAccountForUser({
+      userEmail: input.userEmail,
+      accountId: input.accountId,
+    });
+    if (!account) {
+      return { allowed: false, reason: 'paper account not found for current user' };
+    }
     const quote = await this.paperTradingRepository.findSymbolQuote(input.symbol);
     if (!quote) {
       return { allowed: false, reason: `symbol not tracked: ${input.symbol}` };
