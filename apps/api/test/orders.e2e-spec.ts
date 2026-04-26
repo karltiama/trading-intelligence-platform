@@ -11,6 +11,7 @@ describe('OrdersController (e2e)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
   let ticker: string;
+  const userEmail = 'orders-strict@local.test';
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -46,6 +47,7 @@ describe('OrdersController (e2e)', () => {
   it('places market order and returns in orders list', async () => {
     const placed = await request(app.getHttpServer())
       .post('/orders')
+      .set('x-user-email', userEmail)
       .send({
         symbol: ticker,
         side: 'BUY',
@@ -55,20 +57,26 @@ describe('OrdersController (e2e)', () => {
 
     expect(placed.body.symbol).toBe(ticker);
     expect(placed.body.status).toBe('FILLED');
+    expect(placed.body.userEmail).toBe(userEmail);
     expect(placed.body.fillPrice).toBe(100);
     expect(placed.body.fillNotional).toBe(200);
 
-    const listed = await request(app.getHttpServer()).get('/orders').expect(200);
+    const listed = await request(app.getHttpServer())
+      .get('/orders')
+      .set('x-user-email', userEmail)
+      .expect(200);
     expect(Array.isArray(listed.body)).toBe(true);
     const row = listed.body.find((item: { orderId: string }) => {
       return item.orderId === placed.body.orderId;
     });
     expect(row).toBeDefined();
+    expect(row?.userEmail).toBe(userEmail);
   });
 
   it('rejects cancel for immediately filled market order', async () => {
     const placed = await request(app.getHttpServer())
       .post('/orders')
+      .set('x-user-email', userEmail)
       .send({
         symbol: ticker,
         side: 'BUY',
@@ -78,12 +86,25 @@ describe('OrdersController (e2e)', () => {
 
     await request(app.getHttpServer())
       .post(`/orders/${placed.body.orderId}/cancel`)
+      .set('x-user-email', userEmail)
       .expect(409);
+  });
+
+  it('rejects requests without user context', async () => {
+    await request(app.getHttpServer())
+      .post('/orders')
+      .send({
+        symbol: ticker,
+        side: 'BUY',
+        quantity: 1,
+      })
+      .expect(400);
   });
 
   it('rejects order with invalid quantity', async () => {
     await request(app.getHttpServer())
       .post('/orders')
+      .set('x-user-email', userEmail)
       .send({
         symbol: ticker,
         side: 'BUY',
@@ -95,6 +116,7 @@ describe('OrdersController (e2e)', () => {
   it('rejects unknown symbol order', async () => {
     await request(app.getHttpServer())
       .post('/orders')
+      .set('x-user-email', userEmail)
       .send({
         symbol: 'UNKNOWN_TICKER',
         side: 'BUY',
@@ -106,6 +128,7 @@ describe('OrdersController (e2e)', () => {
   it('rejects insufficient cash on large buy', async () => {
     await request(app.getHttpServer())
       .post('/orders')
+      .set('x-user-email', userEmail)
       .send({
         symbol: ticker,
         side: 'BUY',
@@ -117,12 +140,40 @@ describe('OrdersController (e2e)', () => {
   it('rejects short sell when position is not held', async () => {
     await request(app.getHttpServer())
       .post('/orders')
+      .set('x-user-email', userEmail)
       .send({
         symbol: ticker,
         side: 'SELL',
         quantity: 1,
       })
       .expect(409);
+  });
+
+  it('supports list filters and pagination for account-scoped order history', async () => {
+    await request(app.getHttpServer())
+      .post('/orders')
+      .set('x-user-email', userEmail)
+      .send({
+        symbol: ticker,
+        side: 'BUY',
+        quantity: 1,
+      })
+      .expect(201);
+
+    const bySymbol = await request(app.getHttpServer())
+      .get(`/orders?symbol=${ticker}&status=FILLED&limit=1&offset=0`)
+      .set('x-user-email', userEmail)
+      .expect(200);
+
+    expect(Array.isArray(bySymbol.body)).toBe(true);
+    expect(bySymbol.body.length).toBeGreaterThan(0);
+    expect(bySymbol.body[0].symbol).toBe(ticker);
+    expect(bySymbol.body[0].status).toBe('FILLED');
+
+    await request(app.getHttpServer())
+      .get('/orders?limit=0')
+      .set('x-user-email', userEmail)
+      .expect(400);
   });
 
   afterEach(async () => {

@@ -10,6 +10,7 @@ export type RiskCheckInput = {
   symbol: string;
   side: PaperOrderSide;
   quantity: number;
+  userEmail: string;
 };
 
 export type RiskCheckResult =
@@ -35,7 +36,9 @@ export class RiskService {
       };
     }
 
-    const account = await this.paperTradingRepository.getOrCreateDefaultAccount();
+    const account = await this.paperTradingRepository.getOrCreateAccountForUserEmail(
+      input.userEmail,
+    );
     const quote = await this.paperTradingRepository.findSymbolQuote(input.symbol);
     if (!quote) {
       return { allowed: false, reason: `symbol not tracked: ${input.symbol}` };

@@ -9,14 +9,14 @@ import { PaperTradingService } from './paper-trading.service';
 
 describe('PaperTradingService', () => {
   const repository = {
-    getOrCreateDefaultAccount: jest.fn(),
+    getOrCreateAccountForUserEmail: jest.fn(),
     findSymbolQuote: jest.fn(),
     findPosition: jest.fn(),
     createFilledOrder: jest.fn(),
     updateAccountCash: jest.fn(),
     upsertPosition: jest.fn(),
-    findOrder: jest.fn(),
-    cancelNewOrder: jest.fn(),
+    findOrderForAccount: jest.fn(),
+    cancelNewOrderForAccount: jest.fn(),
   } as unknown as PaperTradingRepository;
 
   const service = new PaperTradingService(repository);
@@ -26,7 +26,7 @@ describe('PaperTradingService', () => {
   });
 
   it('fills a BUY market order immediately and updates cash', async () => {
-    (repository.getOrCreateDefaultAccount as jest.Mock).mockResolvedValue({
+    (repository.getOrCreateAccountForUserEmail as jest.Mock).mockResolvedValue({
       id: 'acct-1',
       startingCash: new Prisma.Decimal(100000),
       cashBalance: new Prisma.Decimal(1000),
@@ -58,7 +58,7 @@ describe('PaperTradingService', () => {
   });
 
   it('rejects BUY when cash is insufficient', async () => {
-    (repository.getOrCreateDefaultAccount as jest.Mock).mockResolvedValue({
+    (repository.getOrCreateAccountForUserEmail as jest.Mock).mockResolvedValue({
       id: 'acct-1',
       startingCash: new Prisma.Decimal(100000),
       cashBalance: new Prisma.Decimal(100),
@@ -81,7 +81,7 @@ describe('PaperTradingService', () => {
   });
 
   it('rejects SELL when position quantity is missing (shorting disabled)', async () => {
-    (repository.getOrCreateDefaultAccount as jest.Mock).mockResolvedValue({
+    (repository.getOrCreateAccountForUserEmail as jest.Mock).mockResolvedValue({
       id: 'acct-1',
       startingCash: new Prisma.Decimal(100000),
       cashBalance: new Prisma.Decimal(1000),
@@ -104,7 +104,7 @@ describe('PaperTradingService', () => {
   });
 
   it('rejects unknown symbol lookup', async () => {
-    (repository.getOrCreateDefaultAccount as jest.Mock).mockResolvedValue({
+    (repository.getOrCreateAccountForUserEmail as jest.Mock).mockResolvedValue({
       id: 'acct-1',
       startingCash: new Prisma.Decimal(100000),
       cashBalance: new Prisma.Decimal(1000),
@@ -122,7 +122,13 @@ describe('PaperTradingService', () => {
   });
 
   it('rejects cancel when order is already filled', async () => {
-    (repository.findOrder as jest.Mock).mockResolvedValue({
+    (repository.getOrCreateAccountForUserEmail as jest.Mock).mockResolvedValue({
+      id: 'acct-1',
+      startingCash: new Prisma.Decimal(100000),
+      cashBalance: new Prisma.Decimal(1000),
+      currency: 'USD',
+    });
+    (repository.findOrderForAccount as jest.Mock).mockResolvedValue({
       id: 'ord-1',
       status: 'FILLED',
     });

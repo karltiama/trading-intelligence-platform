@@ -3,11 +3,13 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   Param,
   Post,
   Query,
 } from '@nestjs/common';
 import { PaperOrderSide } from '@prisma/client';
+import { AccountContextService } from '../account-context/account-context.service';
 import { AutomationService } from './automation.service';
 
 type RunSignalBody = {
@@ -25,10 +27,17 @@ type TriggerRunBody = {
 
 @Controller('automation')
 export class AutomationController {
-  constructor(private readonly automationService: AutomationService) {}
+  constructor(
+    private readonly automationService: AutomationService,
+    private readonly accountContextService: AccountContextService,
+  ) {}
 
   @Post('runs')
-  triggerRun(@Body() body: TriggerRunBody) {
+  triggerRun(
+    @Body() body: TriggerRunBody,
+    @Headers('x-user-email') headerUserEmail?: string,
+    @Query('userEmail') queryUserEmail?: string,
+  ) {
     const strategy = body.strategy?.trim();
     if (!strategy) {
       throw new BadRequestException('strategy is required.');
@@ -72,14 +81,25 @@ export class AutomationController {
       };
     });
 
+    const userEmail = this.accountContextService.resolveUserEmail(
+      headerUserEmail ?? queryUserEmail,
+    );
     return this.automationService.triggerManualRun({
       strategy,
       signals,
+      userEmail,
     });
   }
 
   @Get('runs')
-  listRuns(@Query('limit') limitRaw?: string) {
+  listRuns(
+    @Query('limit') limitRaw?: string,
+    @Query('offset') offsetRaw?: string,
+    @Query('status') statusRaw?: string,
+    @Query('strategy') strategyRaw?: string,
+    @Headers('x-user-email') headerUserEmail?: string,
+    @Query('userEmail') queryUserEmail?: string,
+  ) {
     let limit = 25;
     if (limitRaw) {
       const parsed = Number.parseInt(limitRaw, 10);
@@ -89,24 +109,72 @@ export class AutomationController {
       limit = parsed;
     }
 
-    return this.automationService.listRuns(limit);
+    let offset = 0;
+    if (offsetRaw) {
+      const parsed = Number.parseInt(offsetRaw, 10);
+      if (Number.isNaN(parsed) || parsed < 0) {
+        throw new BadRequestException('offset must be an integer >= 0.');
+      }
+      offset = parsed;
+    }
+
+    let status: 'RUNNING' | 'SUCCESS' | 'FAILED' | 'CANCELLED' | undefined;
+    if (statusRaw) {
+      const normalized = statusRaw.trim().toUpperCase();
+      if (
+        normalized !== 'RUNNING' &&
+        normalized !== 'SUCCESS' &&
+        normalized !== 'FAILED' &&
+        normalized !== 'CANCELLED'
+      ) {
+        throw new BadRequestException(
+          'status must be one of RUNNING, SUCCESS, FAILED, CANCELLED.',
+        );
+      }
+      status = normalized;
+    }
+
+    const strategy = strategyRaw?.trim() || undefined;
+    const userEmail = this.accountContextService.resolveUserEmail(
+      headerUserEmail ?? queryUserEmail,
+    );
+    return this.automationService.listRuns(userEmail, {
+      limit,
+      offset,
+      status,
+      strategy,
+    });
   }
 
   @Get('runs/:id')
-  getRun(@Param('id') runId: string) {
+  getRun(
+    @Param('id') runId: string,
+    @Headers('x-user-email') headerUserEmail?: string,
+    @Query('userEmail') queryUserEmail?: string,
+  ) {
     const id = runId.trim();
     if (!id) {
       throw new BadRequestException('run id is required.');
     }
-    return this.automationService.getRunDetails(id);
+    const userEmail = this.accountContextService.resolveUserEmail(
+      headerUserEmail ?? queryUserEmail,
+    );
+    return this.automationService.getRunDetails(id, userEmail);
   }
 
   @Get('runs/:id/signals')
-  listRunSignals(@Param('id') runId: string) {
+  listRunSignals(
+    @Param('id') runId: string,
+    @Headers('x-user-email') headerUserEmail?: string,
+    @Query('userEmail') queryUserEmail?: string,
+  ) {
     const id = runId.trim();
     if (!id) {
       throw new BadRequestException('run id is required.');
     }
-    return this.automationService.listRunSignals(id);
+    const userEmail = this.accountContextService.resolveUserEmail(
+      headerUserEmail ?? queryUserEmail,
+    );
+    return this.automationService.listRunSignals(id, userEmail);
   }
 }

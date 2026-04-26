@@ -7,6 +7,7 @@ import {
 import { PaperOrderSide, PaperOrderStatus, Prisma } from '@prisma/client';
 import {
   PaperTradingRepository,
+  type PaperOrderListFilters,
   type PaperPositionState,
 } from './paper-trading.repository';
 
@@ -45,11 +46,14 @@ export class PaperTradingService {
 
   async placeMarketOrder(
     input: PlaceMarketOrderInput,
+    userEmail: string,
   ): Promise<PlaceMarketOrderResult> {
     const ticker = this.normalizeTicker(input.symbol);
     const quantity = this.toPositiveQuantity(input.quantity);
 
-    const account = await this.paperTradingRepository.getOrCreateDefaultAccount();
+    const account = await this.paperTradingRepository.getOrCreateAccountForUserEmail(
+      userEmail,
+    );
     const symbolQuote = await this.paperTradingRepository.findSymbolQuote(ticker);
     if (!symbolQuote) {
       throw new NotFoundException(`Tracked symbol not found: ${ticker}`);
@@ -90,8 +94,17 @@ export class PaperTradingService {
     });
   }
 
-  async cancelOrder(orderId: string): Promise<{ orderId: string; status: 'CANCELED' }> {
-    const existing = await this.paperTradingRepository.findOrder(orderId);
+  async cancelOrder(
+    orderId: string,
+    userEmail: string,
+  ): Promise<{ orderId: string; status: 'CANCELED' }> {
+    const account = await this.paperTradingRepository.getOrCreateAccountForUserEmail(
+      userEmail,
+    );
+    const existing = await this.paperTradingRepository.findOrderForAccount(
+      account.id,
+      orderId,
+    );
     if (!existing) {
       throw new NotFoundException(`Order not found: ${orderId}`);
     }
@@ -101,7 +114,10 @@ export class PaperTradingService {
       );
     }
 
-    const canceled = await this.paperTradingRepository.cancelNewOrder(orderId);
+    const canceled = await this.paperTradingRepository.cancelNewOrderForAccount(
+      account.id,
+      orderId,
+    );
     if (!canceled) {
       throw new ConflictException(`Order ${orderId} is no longer cancelable.`);
     }
@@ -109,8 +125,14 @@ export class PaperTradingService {
     return { orderId, status: 'CANCELED' };
   }
 
-  async listOrders(): Promise<PaperOrderListItem[]> {
-    const rows = await this.paperTradingRepository.listOrders();
+  async listOrders(
+    userEmail: string,
+    filters: PaperOrderListFilters = {},
+  ): Promise<PaperOrderListItem[]> {
+    const account = await this.paperTradingRepository.getOrCreateAccountForUserEmail(
+      userEmail,
+    );
+    const rows = await this.paperTradingRepository.listOrders(account.id, filters);
     return rows.map((row) => ({
       orderId: row.id,
       symbol: row.symbol,

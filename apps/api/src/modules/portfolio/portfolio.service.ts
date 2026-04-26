@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PaperTradingRepository } from '../paper-trading/paper-trading.repository';
 
 export type PortfolioPositionRow = {
+  userEmail: string;
   symbol: string;
   quantity: number;
   averageCost: number;
@@ -14,6 +15,7 @@ export type PortfolioPositionRow = {
 };
 
 export type PortfolioSummary = {
+  userEmail: string;
   currency: string;
   cashBalance: number;
   positionsValue: number;
@@ -27,8 +29,10 @@ export type PortfolioSummary = {
 export class PortfolioService {
   constructor(private readonly paperTradingRepository: PaperTradingRepository) {}
 
-  async getPositions(): Promise<PortfolioPositionRow[]> {
-    const account = await this.paperTradingRepository.getOrCreateDefaultAccount();
+  async getPositions(userEmail: string): Promise<PortfolioPositionRow[]> {
+    const account = await this.paperTradingRepository.getOrCreateAccountForUserEmail(
+      userEmail,
+    );
     const positions = await this.paperTradingRepository.listPositions(account.id);
     const latestPrices = await this.paperTradingRepository.findLatestPricesForSymbols(
       positions.map((p) => p.symbolId),
@@ -38,6 +42,7 @@ export class PortfolioService {
       const latest = latestPrices[position.symbolId];
       if (!latest) {
         return {
+          userEmail,
           symbol: position.symbol,
           quantity: position.quantity.toNumber(),
           averageCost: position.averageCost.toNumber(),
@@ -54,6 +59,7 @@ export class PortfolioService {
       const unrealizedPnl = marketValue.sub(costBasis);
 
       return {
+        userEmail,
         symbol: position.symbol,
         quantity: position.quantity.toNumber(),
         averageCost: position.averageCost.toNumber(),
@@ -66,8 +72,10 @@ export class PortfolioService {
     });
   }
 
-  async getSummary(): Promise<PortfolioSummary> {
-    const account = await this.paperTradingRepository.getOrCreateDefaultAccount();
+  async getSummary(userEmail: string): Promise<PortfolioSummary> {
+    const account = await this.paperTradingRepository.getOrCreateAccountForUserEmail(
+      userEmail,
+    );
     const positions = await this.paperTradingRepository.listPositions(account.id);
     const latestPrices = await this.paperTradingRepository.findLatestPricesForSymbols(
       positions.map((p) => p.symbolId),
@@ -96,6 +104,7 @@ export class PortfolioService {
     }
 
     return {
+      userEmail,
       currency: account.currency,
       cashBalance: account.cashBalance.toNumber(),
       positionsValue: positionsValue.toNumber(),

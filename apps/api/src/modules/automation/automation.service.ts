@@ -5,7 +5,10 @@ import {
   type PlaceMarketOrderResult,
 } from '../paper-trading/paper-trading.service';
 import { RiskService } from '../risk/risk.service';
-import { AutomationRepository } from './automation.repository';
+import {
+  AutomationRepository,
+  type AutomationRunListFilters,
+} from './automation.repository';
 
 export type AutomationSignalInput = {
   symbolId: string;
@@ -16,6 +19,7 @@ export type AutomationSignalInput = {
 };
 
 export type AutomationRunResult = {
+  userEmail: string;
   runId: string;
   strategy: string;
   totalSignals: number;
@@ -27,6 +31,7 @@ export type AutomationRunResult = {
 };
 
 export type AutomationRunListItem = {
+  userEmail: string;
   runId: string;
   strategy: string;
   status: 'RUNNING' | 'SUCCESS' | 'FAILED' | 'CANCELLED';
@@ -46,6 +51,7 @@ export type AutomationRunDetails = AutomationRunListItem & {
 };
 
 export type AutomationSignalExecutionItem = {
+  userEmail: string;
   executionId: string;
   signalKey: string;
   symbol: string;
@@ -73,13 +79,18 @@ export class AutomationService {
   async executeRun(params: {
     strategy: string;
     signals: AutomationSignalInput[];
+    userEmail: string;
   }): Promise<AutomationRunResult> {
     const strategy = params.strategy.trim();
     if (!strategy) {
       throw new BadRequestException('strategy is required.');
     }
 
-    const run = await this.automationRepository.createRun(strategy);
+    const userEmail = params.userEmail;
+    const run = await this.automationRepository.createRun({
+      strategy,
+      userEmail,
+    });
     let placed = 0;
     let duplicateSkipped = 0;
     let rejectedRisk = 0;
@@ -104,6 +115,7 @@ export class AutomationService {
         symbol: signal.symbol,
         side: signal.side,
         quantity: signal.quantity,
+        userEmail,
       });
       if (!risk.allowed) {
         rejectedRisk += 1;
@@ -115,7 +127,7 @@ export class AutomationService {
       }
 
       try {
-        const order = await this.placeOrderFromSignal(signal);
+        const order = await this.placeOrderFromSignal(signal, userEmail);
         await this.automationRepository.markSignalExecutionPlaced({
           executionId: execution.id,
           orderId: order.orderId,
@@ -141,6 +153,7 @@ export class AutomationService {
     });
 
     return {
+      userEmail,
       runId: run.id,
       strategy,
       totalSignals: params.signals.length,
@@ -155,13 +168,18 @@ export class AutomationService {
   triggerManualRun(params: {
     strategy: string;
     signals: AutomationSignalInput[];
+    userEmail: string;
   }): Promise<AutomationRunResult> {
     return this.executeRun(params);
   }
 
-  async listRuns(limit = 25): Promise<AutomationRunListItem[]> {
-    const rows = await this.automationRepository.listRuns(limit);
+  async listRuns(
+    userEmail: string,
+    filters: AutomationRunListFilters = {},
+  ): Promise<AutomationRunListItem[]> {
+    const rows = await this.automationRepository.listRuns(userEmail, filters);
     return rows.map((row) => ({
+      userEmail,
       runId: row.id,
       strategy: row.strategy,
       status: row.status,
@@ -171,8 +189,11 @@ export class AutomationService {
     }));
   }
 
-  async getRunDetails(runId: string): Promise<AutomationRunDetails> {
-    const run = await this.automationRepository.findRun(runId);
+  async getRunDetails(
+    runId: string,
+    userEmail: string,
+  ): Promise<AutomationRunDetails> {
+    const run = await this.automationRepository.findRun(runId, userEmail);
     if (!run) {
       throw new NotFoundException(`Automation run not found: ${runId}`);
     }
@@ -188,6 +209,7 @@ export class AutomationService {
     };
 
     return {
+      userEmail,
       runId: run.id,
       strategy: run.strategy,
       status: run.status,
@@ -198,14 +220,18 @@ export class AutomationService {
     };
   }
 
-  async listRunSignals(runId: string): Promise<AutomationSignalExecutionItem[]> {
-    const run = await this.automationRepository.findRun(runId);
+  async listRunSignals(
+    runId: string,
+    userEmail: string,
+  ): Promise<AutomationSignalExecutionItem[]> {
+    const run = await this.automationRepository.findRun(runId, userEmail);
     if (!run) {
       throw new NotFoundException(`Automation run not found: ${runId}`);
     }
 
     const rows = await this.automationRepository.listRunSignalExecutions(runId);
     return rows.map((row) => ({
+      userEmail,
       executionId: row.id,
       signalKey: row.signalKey,
       symbol: row.symbol,
@@ -225,11 +251,12 @@ export class AutomationService {
 
   private async placeOrderFromSignal(
     signal: AutomationSignalInput,
+    userEmail: string,
   ): Promise<PlaceMarketOrderResult> {
     return this.paperTradingService.placeMarketOrder({
       symbol: signal.symbol,
       side: signal.side,
       quantity: signal.quantity,
-    });
+    }, userEmail);
   }
 }

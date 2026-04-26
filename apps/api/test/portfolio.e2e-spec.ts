@@ -11,6 +11,7 @@ describe('PortfolioController (e2e)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
   let ticker: string;
+  const userEmail = 'portfolio-strict@local.test';
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -46,6 +47,7 @@ describe('PortfolioController (e2e)', () => {
   it('returns positions and summary after market buy order', async () => {
     await request(app.getHttpServer())
       .post('/orders')
+      .set('x-user-email', userEmail)
       .send({
         symbol: ticker,
         side: 'BUY',
@@ -55,6 +57,7 @@ describe('PortfolioController (e2e)', () => {
 
     const positions = await request(app.getHttpServer())
       .get('/portfolio/positions')
+      .set('x-user-email', userEmail)
       .expect(200);
 
     expect(Array.isArray(positions.body)).toBe(true);
@@ -62,6 +65,7 @@ describe('PortfolioController (e2e)', () => {
       (row: { symbol: string }) => row.symbol === ticker,
     );
     expect(position).toBeDefined();
+    expect(position.userEmail).toBe(userEmail);
     expect(position.quantity).toBe(2);
     expect(position.averageCost).toBe(100);
     expect(position.currentPrice).toBe(100);
@@ -72,8 +76,10 @@ describe('PortfolioController (e2e)', () => {
 
     const summary = await request(app.getHttpServer())
       .get('/portfolio/summary')
+      .set('x-user-email', userEmail)
       .expect(200);
     expect(summary.body.currency).toBe('USD');
+    expect(summary.body.userEmail).toBe(userEmail);
     expect(summary.body.positionsValue).toBeGreaterThanOrEqual(200);
     expect(summary.body.totalEquity).toBe(
       summary.body.cashBalance + summary.body.positionsValue,
@@ -85,6 +91,7 @@ describe('PortfolioController (e2e)', () => {
   it('updates realized pnl after buy then partial sell', async () => {
     await request(app.getHttpServer())
       .post('/orders')
+      .set('x-user-email', userEmail)
       .send({
         symbol: ticker,
         side: 'BUY',
@@ -115,6 +122,7 @@ describe('PortfolioController (e2e)', () => {
 
     await request(app.getHttpServer())
       .post('/orders')
+      .set('x-user-email', userEmail)
       .send({
         symbol: ticker,
         side: 'SELL',
@@ -124,12 +132,14 @@ describe('PortfolioController (e2e)', () => {
 
     const positions = await request(app.getHttpServer())
       .get('/portfolio/positions')
+      .set('x-user-email', userEmail)
       .expect(200);
 
     const position = positions.body.find(
       (row: { symbol: string }) => row.symbol === ticker,
     );
     expect(position).toBeDefined();
+    expect(position.userEmail).toBe(userEmail);
     expect(position.quantity).toBe(1);
     expect(position.averageCost).toBe(100);
     expect(position.currentPrice).toBe(120);
@@ -139,12 +149,18 @@ describe('PortfolioController (e2e)', () => {
 
     const summary = await request(app.getHttpServer())
       .get('/portfolio/summary')
+      .set('x-user-email', userEmail)
       .expect(200);
+    expect(summary.body.userEmail).toBe(userEmail);
     expect(summary.body.realizedPnl).toBeGreaterThanOrEqual(20);
     expect(summary.body.totalEquity).toBe(
       summary.body.cashBalance + summary.body.positionsValue,
     );
     expect(summary.body.asOf).toBe('2026-04-26T00:00:00.000Z');
+  });
+
+  it('rejects portfolio summary without user context', async () => {
+    await request(app.getHttpServer()).get('/portfolio/summary').expect(400);
   });
 
   afterEach(async () => {

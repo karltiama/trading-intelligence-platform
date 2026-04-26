@@ -5,6 +5,9 @@ import { PrismaService } from '../../prisma/prisma.service';
 const DEFAULT_STARTING_CASH = new Prisma.Decimal('100000');
 const DEFAULT_CURRENCY = 'USD';
 const DEFAULT_ACCOUNT_ID = 'paper-default';
+const DEFAULT_USER_EMAIL = 'local-default@paper.local';
+const DEFAULT_USER_DISPLAY_NAME = 'Local Default User';
+export const DEFAULT_ACCOUNT_CONTEXT_EMAIL = DEFAULT_USER_EMAIL;
 
 export type PaperAccountState = {
   id: string;
@@ -43,6 +46,13 @@ export type PaperOrderListRow = {
   canceledAt: Date | null;
 };
 
+export type PaperOrderListFilters = {
+  symbol?: string;
+  status?: PaperOrderStatus;
+  limit?: number;
+  offset?: number;
+};
+
 export type PaperPositionListRow = {
   symbolId: string;
   symbol: string;
@@ -63,16 +73,24 @@ export class PaperTradingRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   async getOrCreateDefaultAccount(): Promise<PaperAccountState> {
+    const defaultUserId = await this.getOrCreateUserIdByEmail(DEFAULT_USER_EMAIL);
     const existing = await this.prisma.paperAccount.findUnique({
       where: { id: DEFAULT_ACCOUNT_ID },
       select: {
         id: true,
+        userId: true,
         startingCash: true,
         cashBalance: true,
         currency: true,
       },
     });
     if (existing) {
+      if (!existing.userId) {
+        await this.prisma.paperAccount.update({
+          where: { id: existing.id },
+          data: { userId: defaultUserId },
+        });
+      }
       return existing;
     }
 
@@ -80,6 +98,7 @@ export class PaperTradingRepository {
       return await this.prisma.paperAccount.create({
         data: {
           id: DEFAULT_ACCOUNT_ID,
+          userId: defaultUserId,
           startingCash: DEFAULT_STARTING_CASH,
           cashBalance: DEFAULT_STARTING_CASH,
           currency: DEFAULT_CURRENCY,
@@ -96,6 +115,7 @@ export class PaperTradingRepository {
         where: { id: DEFAULT_ACCOUNT_ID },
         select: {
           id: true,
+          userId: true,
           startingCash: true,
           cashBalance: true,
           currency: true,
@@ -104,7 +124,85 @@ export class PaperTradingRepository {
       if (!resolved) {
         throw new Error('Failed to resolve default paper account.');
       }
+      if (!resolved.userId) {
+        await this.prisma.paperAccount.update({
+          where: { id: resolved.id },
+          data: { userId: defaultUserId },
+        });
+      }
       return resolved;
+    }
+  }
+
+  async getOrCreateAccountForUserEmail(
+    userEmail: string,
+  ): Promise<PaperAccountState> {
+    const normalizedEmail = userEmail.trim().toLowerCase();
+    if (!normalizedEmail) {
+      return this.getOrCreateDefaultAccount();
+    }
+
+    const userId = await this.getOrCreateUserIdByEmail(normalizedEmail);
+    const existing = await this.prisma.paperAccount.findFirst({
+      where: { userId },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        startingCash: true,
+        cashBalance: true,
+        currency: true,
+      },
+    });
+    if (existing) {
+      return existing;
+    }
+
+    return this.prisma.paperAccount.create({
+      data: {
+        userId,
+        startingCash: DEFAULT_STARTING_CASH,
+        cashBalance: DEFAULT_STARTING_CASH,
+        currency: DEFAULT_CURRENCY,
+      },
+      select: {
+        id: true,
+        startingCash: true,
+        cashBalance: true,
+        currency: true,
+      },
+    });
+  }
+
+  private async getOrCreateUserIdByEmail(email: string): Promise<string> {
+    const existing = await this.prisma.user.findUnique({
+      where: { email },
+      select: { id: true },
+    });
+    if (existing) {
+      return existing.id;
+    }
+
+    try {
+      const created = await this.prisma.user.create({
+        data: {
+          email,
+          displayName:
+            email === DEFAULT_USER_EMAIL
+              ? DEFAULT_USER_DISPLAY_NAME
+              : email.split('@')[0] ?? 'Paper User',
+        },
+        select: { id: true },
+      });
+      return created.id;
+    } catch {
+      const resolved = await this.prisma.user.findUnique({
+        where: { email },
+        select: { id: true },
+      });
+      if (!resolved) {
+        throw new Error(`Failed to resolve user for paper account: ${email}`);
+      }
+      return resolved.id;
     }
   }
 
@@ -227,27 +325,42 @@ export class PaperTradingRepository {
     });
   }
 
-  async findOrder(orderId: string): Promise<PaperOrderState | null> {
+  async findOrderForAccount(
+    accountId: string,
+    orderId: string,
+  ): Promise<PaperOrderState | null> {
     return this.prisma.paperOrder.findUnique({
-      where: { id: orderId },
+      where: { id: orderId, accountId },
       select: { id: true, status: true },
     });
   }
 
-  async cancelNewOrder(orderId: string): Promise<boolean> {
+  async cancelNewOrderForAccount(
+    accountId: string,
+    orderId: string,
+  ): Promise<boolean> {
     const result = await this.prisma.paperOrder.updateMany({
-      where: { id: orderId, status: 'NEW' },
+      where: { id: orderId, accountId, status: 'NEW' },
       data: { status: 'CANCELED', canceledAt: new Date() },
     });
     return result.count > 0;
   }
 
-  async listOrders(): Promise<PaperOrderListRow[]> {
-    const account = await this.getOrCreateDefaultAccount();
-
+  async listOrders(
+    accountId: string,
+    filters: PaperOrderListFilters = {},
+  ): Promise<PaperOrderListRow[]> {
     const rows = await this.prisma.paperOrder.findMany({
-      where: { accountId: account.id },
+      where: {
+        accountId,
+        status: filters.status,
+        symbol: filters.symbol
+          ? { ticker: filters.symbol.toUpperCase() }
+          : undefined,
+      },
       orderBy: { requestedAt: 'desc' },
+      take: filters.limit,
+      skip: filters.offset ?? 0,
       select: {
         id: true,
         side: true,

@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 
 export type AutomationRunRow = {
   id: string;
+  userEmail: string;
   strategy: string;
   status: RunStatus;
   startedAt: Date;
@@ -11,6 +12,7 @@ export type AutomationRunRow = {
 
 export type AutomationRunListRow = {
   id: string;
+  userEmail: string;
   strategy: string;
   status: RunStatus;
   startedAt: Date;
@@ -36,18 +38,30 @@ export type AutomationSignalExecutionRow = {
   updatedAt: Date;
 };
 
+export type AutomationRunListFilters = {
+  strategy?: string;
+  status?: RunStatus;
+  limit?: number;
+  offset?: number;
+};
+
 @Injectable()
 export class AutomationRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async createRun(strategy: string): Promise<AutomationRunRow> {
+  async createRun(params: {
+    strategy: string;
+    userEmail: string;
+  }): Promise<AutomationRunRow> {
     return this.prisma.strategyRun.create({
       data: {
-        strategy,
+        strategy: params.strategy,
+        userEmail: params.userEmail,
         status: 'RUNNING',
       },
       select: {
         id: true,
+        userEmail: true,
         strategy: true,
         status: true,
         startedAt: true,
@@ -137,12 +151,22 @@ export class AutomationRepository {
     });
   }
 
-  async listRuns(limit = 25): Promise<AutomationRunListRow[]> {
+  async listRuns(
+    userEmail: string,
+    filters: AutomationRunListFilters = {},
+  ): Promise<AutomationRunListRow[]> {
     return this.prisma.strategyRun.findMany({
+      where: {
+        userEmail,
+        strategy: filters.strategy,
+        status: filters.status,
+      },
       orderBy: { startedAt: 'desc' },
-      take: limit,
+      take: filters.limit ?? 25,
+      skip: filters.offset ?? 0,
       select: {
         id: true,
+        userEmail: true,
         strategy: true,
         status: true,
         startedAt: true,
@@ -152,11 +176,15 @@ export class AutomationRepository {
     });
   }
 
-  async findRun(runId: string): Promise<AutomationRunListRow | null> {
-    return this.prisma.strategyRun.findUnique({
-      where: { id: runId },
+  async findRun(
+    runId: string,
+    userEmail: string,
+  ): Promise<AutomationRunListRow | null> {
+    return this.prisma.strategyRun.findFirst({
+      where: { id: runId, userEmail },
       select: {
         id: true,
+        userEmail: true,
         strategy: true,
         status: true,
         startedAt: true,
