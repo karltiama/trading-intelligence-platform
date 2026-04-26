@@ -177,7 +177,10 @@ export class MarketDataRepository {
     cutoff.setUTCDate(cutoff.getUTCDate() - lookbackDays);
 
     const rows = await this.prisma.dailyPrice.findMany({
-      where: { date: { gte: cutoff } },
+      where: {
+        date: { gte: cutoff },
+        symbol: { isActive: true },
+      },
       orderBy: [{ symbolId: 'asc' }, { date: 'desc' }],
       include: { symbol: { select: { ticker: true } } },
     });

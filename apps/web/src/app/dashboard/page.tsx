@@ -1,18 +1,87 @@
-import type { Metadata } from "next";
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
 
 import { ChartCard } from "@/components/dashboard/chart-card";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { InsightsPanel } from "@/components/dashboard/insights-panel";
-import { KpiCards } from "@/components/dashboard/kpi-cards";
 import { TodaysSetups } from "@/components/dashboard/todays-setups";
 import { WatchlistTable } from "@/components/dashboard/watchlist-table";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  getMarketSummary,
+  getPortfolioPositions,
+  getPortfolioSummary,
+  type MarketSummaryItem,
+  type PortfolioPosition,
+  type PortfolioSummary,
+} from "@/lib/api";
 
-export const metadata: Metadata = {
-  title: "Dashboard · TradeIQ",
-  description: "Phase 1 paper-trading dashboard for TradeIQ.",
-};
+const usd = (value: number) =>
+  new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+  }).format(value);
 
-export default function DashboardPage() {
+export default function DashboardPage(): React.JSX.Element {
+  const [portfolioSummary, setPortfolioSummary] = useState<PortfolioSummary | null>(
+    null,
+  );
+  const [positions, setPositions] = useState<PortfolioPosition[]>([]);
+  const [marketSummary, setMarketSummary] = useState<MarketSummaryItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadDashboardData() {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const [summaryRes, positionsRes, marketRes] = await Promise.all([
+          getPortfolioSummary(),
+          getPortfolioPositions(),
+          getMarketSummary(),
+        ]);
+        if (!isMounted) return;
+        setPortfolioSummary(summaryRes);
+        setPositions(positionsRes);
+        setMarketSummary(marketRes);
+      } catch (err: unknown) {
+        if (!isMounted) return;
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Failed to load dashboard data from the backend.",
+        );
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void loadDashboardData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const openPositions = useMemo(
+    () => positions.filter((position) => position.quantity > 0).length,
+    [positions],
+  );
+
+  const trackedSymbols = useMemo(() => {
+    const unique = new Set(marketSummary.map((item) => item.symbol));
+    return unique.size;
+  }, [marketSummary]);
+
   return (
     <div className="flex min-h-svh flex-col">
       <DashboardHeader />
@@ -25,7 +94,99 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        <KpiCards />
+        {isLoading ? (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <Card key={`kpi-skeleton-${index}`}>
+                <CardHeader className="pb-2">
+                  <Skeleton className="h-4 w-24" />
+                </CardHeader>
+                <CardContent>
+                  <Skeleton className="h-8 w-28" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : null}
+
+        {!isLoading && error ? (
+          <Card>
+            <CardContent className="p-4 text-sm text-rose-600 dark:text-rose-400">
+              Could not load dashboard data. {error}
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {!isLoading && !error ? (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Cash
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-2xl font-semibold tracking-tight">
+                {portfolioSummary ? usd(portfolioSummary.cashBalance) : "N/A"}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Equity
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-2xl font-semibold tracking-tight">
+                {portfolioSummary ? usd(portfolioSummary.totalEquity) : "N/A"}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Unrealized PnL
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-2xl font-semibold tracking-tight">
+                {portfolioSummary ? usd(portfolioSummary.unrealizedPnl) : "N/A"}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Open Positions
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-2xl font-semibold tracking-tight">
+                {openPositions}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Tracked Symbols
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-2xl font-semibold tracking-tight">
+                {trackedSymbols}
+              </CardContent>
+            </Card>
+          </div>
+        ) : null}
+
+        {!isLoading &&
+        !error &&
+        positions.length === 0 &&
+        marketSummary.length === 0 ? (
+          <Card>
+            <CardContent className="p-4 text-sm text-muted-foreground">
+              No portfolio positions or tracked symbols yet. Place an order or sync
+              market data to populate this dashboard.
+            </CardContent>
+          </Card>
+        ) : null}
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <div className="lg:col-span-2">

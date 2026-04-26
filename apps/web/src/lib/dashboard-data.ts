@@ -1,11 +1,10 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  BarChart3,
   Briefcase,
   LayoutDashboard,
-  Settings,
-  Signal,
-  Star,
+  ListOrdered,
+  PlayCircle,
+  Shield,
 } from "lucide-react";
 
 export type NavItem = {
@@ -16,11 +15,10 @@ export type NavItem = {
 
 export const navItems: NavItem[] = [
   { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { title: "Watchlist", href: "/watchlist", icon: Star },
-  { title: "Signals", href: "/signals", icon: Signal },
-  { title: "Backtests", href: "/backtests", icon: BarChart3 },
-  { title: "Portfolio", href: "/portfolio", icon: Briefcase },
-  { title: "Settings", href: "/settings", icon: Settings },
+  { title: "Orders", href: "/dashboard/orders", icon: ListOrdered },
+  { title: "Automation", href: "/dashboard/automation", icon: PlayCircle },
+  { title: "Guardrails", href: "/dashboard/guardrails", icon: Shield },
+  { title: "Portfolio", href: "/dashboard/orders", icon: Briefcase },
 ];
 
 export type Direction = "up" | "down" | "flat";
