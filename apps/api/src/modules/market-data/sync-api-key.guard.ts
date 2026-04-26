@@ -7,11 +7,14 @@ import {
 } from '@nestjs/common';
 
 const SYNC_API_KEY_HEADER = 'x-sync-api-key';
+const DEV_FALLBACK_SYNC_API_KEY = 'dev-sync-key';
 
 @Injectable()
 export class SyncApiKeyGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
-    const expectedApiKey = process.env.SYNC_API_KEY;
+    const expectedApiKey =
+      process.env.SYNC_API_KEY ??
+      (process.env.NODE_ENV === 'production' ? undefined : DEV_FALLBACK_SYNC_API_KEY);
     if (!expectedApiKey) {
       throw new InternalServerErrorException(
         'SYNC_API_KEY is not configured on the server.',

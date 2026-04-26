@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   ListOrdered,
   PlayCircle,
+  Radar,
   Shield,
 } from "lucide-react";
 
@@ -15,6 +16,7 @@ export type NavItem = {
 
 export const navItems: NavItem[] = [
   { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { title: "Signals", href: "/dashboard/signals", icon: Radar },
   { title: "Orders", href: "/dashboard/orders", icon: ListOrdered },
   { title: "Automation", href: "/dashboard/automation", icon: PlayCircle },
   { title: "Guardrails", href: "/dashboard/guardrails", icon: Shield },

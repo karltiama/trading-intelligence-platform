@@ -20,6 +20,16 @@ export type SymbolLatestBars = {
   previousClose: Prisma.Decimal | null;
 };
 
+export type StoredDailyBar = {
+  symbol: string;
+  open: Prisma.Decimal;
+  high: Prisma.Decimal;
+  low: Prisma.Decimal;
+  close: Prisma.Decimal;
+  volume: Prisma.Decimal;
+  date: Date;
+};
+
 export type TrackedSymbol = {
   ticker: string;
   name: string | null;
@@ -133,37 +143,34 @@ export class MarketDataRepository {
     if (bars.length === 0) {
       return;
     }
-
-    await this.prisma.$transaction(
-      bars.map((bar) =>
-        this.prisma.dailyPrice.upsert({
-          where: {
-            symbolId_date: {
-              symbolId,
-              date: bar.date,
-            },
-          },
-          create: {
+    for (const bar of bars) {
+      await this.prisma.dailyPrice.upsert({
+        where: {
+          symbolId_date: {
             symbolId,
             date: bar.date,
-            open: bar.open,
-            high: bar.high,
-            low: bar.low,
-            close: bar.close,
-            volume: bar.volume,
-            source: bar.source,
           },
-          update: {
-            open: bar.open,
-            high: bar.high,
-            low: bar.low,
-            close: bar.close,
-            volume: bar.volume,
-            source: bar.source,
-          },
-        }),
-      ),
-    );
+        },
+        create: {
+          symbolId,
+          date: bar.date,
+          open: bar.open,
+          high: bar.high,
+          low: bar.low,
+          close: bar.close,
+          volume: bar.volume,
+          source: bar.source,
+        },
+        update: {
+          open: bar.open,
+          high: bar.high,
+          low: bar.low,
+          close: bar.close,
+          volume: bar.volume,
+          source: bar.source,
+        },
+      });
+    }
   }
 
   /**
@@ -219,5 +226,48 @@ export class MarketDataRepository {
     return Array.from(bySymbol.values()).sort((a, b) =>
       a.ticker.localeCompare(b.ticker),
     );
+  }
+
+  async findStoredDailyBarsByTicker(
+    ticker: string,
+    limit: number,
+  ): Promise<StoredDailyBar[]> {
+    const normalizedTicker = ticker.trim().toUpperCase();
+    if (!normalizedTicker || limit < 1) {
+      return [];
+    }
+
+    const rows = await this.prisma.dailyPrice.findMany({
+      where: {
+        symbol: {
+          ticker: normalizedTicker,
+        },
+      },
+      orderBy: { date: 'desc' },
+      take: limit,
+      select: {
+        open: true,
+        high: true,
+        low: true,
+        close: true,
+        volume: true,
+        date: true,
+        symbol: {
+          select: {
+            ticker: true,
+          },
+        },
+      },
+    });
+
+    return rows.map((row) => ({
+      symbol: row.symbol.ticker,
+      open: row.open,
+      high: row.high,
+      low: row.low,
+      close: row.close,
+      volume: row.volume,
+      date: row.date,
+    }));
   }
 }

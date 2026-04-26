@@ -21,6 +21,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { TradingViewSymbolChart } from "@/components/dashboard/tradingview-symbol-chart";
 
 function formatDate(value: string): string {
   return new Date(value).toLocaleString();
@@ -149,6 +150,58 @@ export default function OrdersPage(): React.JSX.Element {
           </form>
         </CardContent>
       </Card>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-1">
+          <CardHeader>
+            <CardTitle className="text-base">Decision Context</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <div>
+              <p className="text-xs text-muted-foreground">Setup / Signal</p>
+              <p className="font-medium">
+                {symbol.trim() ? `Manual check for ${symbol.trim().toUpperCase()}` : "-"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Reason</p>
+              <p className="text-muted-foreground">
+                Confirm recent close behavior before placing a paper order.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-md border p-2">
+                <p className="text-xs text-muted-foreground">Risk Status</p>
+                <p className="font-medium">Pending checks</p>
+              </div>
+              <div className="rounded-md border p-2">
+                <p className="text-xs text-muted-foreground">Side</p>
+                <p className="font-medium">{side}</p>
+              </div>
+              <div className="rounded-md border p-2">
+                <p className="text-xs text-muted-foreground">Entry</p>
+                <p className="font-medium">Market (manual)</p>
+              </div>
+              <div className="rounded-md border p-2">
+                <p className="text-xs text-muted-foreground">Stop / Target</p>
+                <p className="font-medium">Not set</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <div className="lg:col-span-2">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Chart Context</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="px-4 pb-4">
+                <TradingViewSymbolChart symbol={symbol} />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
 
       {message ? <p className="text-sm text-emerald-600">{message}</p> : null}
       {error ? <p className="text-sm text-rose-600">{error}</p> : null}

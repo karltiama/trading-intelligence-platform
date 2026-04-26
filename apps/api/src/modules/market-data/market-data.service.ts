@@ -30,8 +30,23 @@ export class MarketDataService {
     if (!normalized) {
       throw new BadRequestException('Symbol is required.');
     }
-
-    return this.alpacaClient.getDailyBars(normalized, limit);
+    const effectiveLimit = limit < 1 ? 30 : limit;
+    const rows = await this.marketDataRepository.findStoredDailyBarsByTicker(
+      normalized,
+      effectiveLimit,
+    );
+    return rows
+      .slice()
+      .reverse()
+      .map((row) => ({
+        symbol: row.symbol,
+        open: row.open.toNumber(),
+        high: row.high.toNumber(),
+        low: row.low.toNumber(),
+        close: row.close.toNumber(),
+        volume: row.volume.toNumber(),
+        timestamp: row.date.toISOString(),
+      }));
   }
 
   normalizeTicker(symbol: string): string {

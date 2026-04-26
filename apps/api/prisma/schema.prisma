@@ -54,6 +54,16 @@ enum SignalExecutionStatus {
   FAILED
 }
 
+enum SignalStatus {
+  ACTIVE
+  EXPIRED
+  INVALIDATED
+}
+
+enum StrategyName {
+  TREND_PULLBACK
+}
+
 enum AuditEventType {
   ORDER_PLACED
   AUTOMATION_RUN_STARTED
@@ -122,18 +132,29 @@ model Candle {
 }
 
 model Signal {
-  id         String     @id @default(cuid())
-  symbolId   String
-  strategy   String
-  side       SignalSide
-  confidence Decimal?   @db.Decimal(5, 4)
-  entryPrice Decimal?   @db.Decimal(18, 8)
-  stopPrice  Decimal?   @db.Decimal(18, 8)
-  active     Boolean    @default(true)
-  createdAt  DateTime   @default(now())
-  symbol     Symbol     @relation(fields: [symbolId], references: [id], onDelete: Cascade)
+  id           String       @id @default(cuid())
+  symbolId     String
+  strategyName StrategyName
+  status       SignalStatus @default(ACTIVE)
+  signalKey    String       @unique
+  signalDate   DateTime     @db.Date
+  confidence   Int?
+  entryPrice   Decimal?     @db.Decimal(18, 8)
+  stopLoss     Decimal?     @db.Decimal(18, 8)
+  targetPrice  Decimal?     @db.Decimal(18, 8)
+  riskReward   Decimal?     @db.Decimal(18, 8)
+  timeHorizon  String?
+  reason       String
+  expiresAt    DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  symbol       Symbol       @relation(fields: [symbolId], references: [id], onDelete: Cascade)
 
-  @@index([symbolId, createdAt])
+  @@index([symbolId])
+  @@index([status])
+  @@index([strategyName])
+  @@index([createdAt])
+  @@index([symbolId, strategyName, signalDate])
 }
 
 model StrategyRun {

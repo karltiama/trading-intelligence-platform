@@ -87,6 +87,15 @@ export type MarketSummaryItem = {
   lastDate?: string;
 };
 
+export type DailyBar = {
+  timestamp: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+};
+
 export type PortfolioSummary = {
   userEmail: string;
   currency: string;
@@ -189,6 +198,37 @@ export type AutomationGuardrail = {
   updatedAt: string;
 };
 
+export type SignalStatus = "ACTIVE" | "EXPIRED" | "INVALIDATED";
+export type StrategyName = "TREND_PULLBACK";
+
+export type SignalItem = {
+  id: string;
+  symbol: string;
+  strategyName: StrategyName;
+  status: SignalStatus;
+  confidence: number | null;
+  entryPrice: number | null;
+  stopLoss: number | null;
+  targetPrice: number | null;
+  riskReward: number | null;
+  timeHorizon: string | null;
+  reason: string;
+  signalDate: string;
+  expiresAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ScanSignalsSummary = {
+  strategyName: StrategyName;
+  scannedSymbols: number;
+  qualifiedSignals: number;
+  upsertedSignals: number;
+  expiredSignals: number;
+  skippedSymbols: number;
+  asOf: string;
+};
+
 export type TriggerAutomationRunBody = {
   strategy: string;
   signals: Array<{
@@ -202,6 +242,15 @@ export type TriggerAutomationRunBody = {
 
 export function getMarketSummary(): Promise<MarketSummaryItem[]> {
   return apiGet<MarketSummaryItem[]>("/dashboard/market-summary");
+}
+
+export function getSymbolDailyBars(
+  symbol: string,
+  limit: number,
+): Promise<DailyBar[]> {
+  return apiGet<DailyBar[]>(
+    `/market-data/${encodeURIComponent(symbol)}/bars?limit=${limit}`,
+  );
 }
 
 export function getPortfolioSummary(): Promise<PortfolioSummary> {
@@ -244,4 +293,21 @@ export function getAutomationGuardrail(
   strategy: string,
 ): Promise<AutomationGuardrail> {
   return apiGet<AutomationGuardrail>(`/automation/guardrails/${strategy}`);
+}
+
+export function scanSignals(): Promise<ScanSignalsSummary> {
+  return apiPost<ScanSignalsSummary>("/signals/scan");
+}
+
+export function listSignals(params?: {
+  status?: SignalStatus;
+  strategyName?: StrategyName;
+  symbol?: string;
+}): Promise<SignalItem[]> {
+  const query = new URLSearchParams();
+  if (params?.status) query.set("status", params.status);
+  if (params?.strategyName) query.set("strategyName", params.strategyName);
+  if (params?.symbol) query.set("symbol", params.symbol.trim().toUpperCase());
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return apiGet<SignalItem[]>(`/signals${suffix}`);
 }

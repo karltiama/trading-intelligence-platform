@@ -7,14 +7,26 @@ import {
 import { FormattedBar, FormattedQuote } from './dto/market-data-response.dto';
 
 type AlpacaBarsResponse = {
-  bars?: Array<{
-    t: string;
-    o: number;
-    h: number;
-    l: number;
-    c: number;
-    v: number;
-  }>;
+  bars?:
+    | Array<{
+        t: string;
+        o: number;
+        h: number;
+        l: number;
+        c: number;
+        v: number;
+      }>
+    | Record<
+        string,
+        Array<{
+          t: string;
+          o: number;
+          h: number;
+          l: number;
+          c: number;
+          v: number;
+        }>
+      >;
 };
 
 type AlpacaLatestQuoteResponse = {
@@ -50,7 +62,12 @@ export class AlpacaClient {
 
   async getDailyBars(symbol: string, limit = 30): Promise<FormattedBar[]> {
     const encodedSymbol = encodeURIComponent(symbol);
-    const url = `${this.baseUrl}/v2/stocks/${encodedSymbol}/bars?timeframe=1Day&limit=${limit}&adjustment=raw&feed=iex`;
+    const end = new Date();
+    const start = new Date(end);
+    start.setUTCDate(start.getUTCDate() - Math.max(limit * 2, 30));
+    const startIso = encodeURIComponent(start.toISOString());
+    const endIso = encodeURIComponent(end.toISOString());
+    const url = `${this.baseUrl}/v2/stocks/bars?symbols=${encodedSymbol}&timeframe=1Day&start=${startIso}&end=${endIso}&limit=${limit}&adjustment=raw&feed=iex&sort=asc`;
 
     const response = await fetch(url, {
       method: 'GET',
@@ -65,7 +82,10 @@ export class AlpacaClient {
     }
 
     const payload = (await response.json()) as AlpacaBarsResponse;
-    const bars = payload.bars ?? [];
+    const barsField = payload.bars;
+    const bars = Array.isArray(barsField)
+      ? barsField
+      : (barsField?.[symbol.toUpperCase()] ?? []);
 
     this.logger.log(
       `Fetched ${bars.length} daily bars for ${symbol.toUpperCase()}.`,
