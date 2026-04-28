@@ -239,7 +239,43 @@ export type ScanSignalsSummary = {
   upsertedSignals: number;
   expiredSignals: number;
   skippedSymbols: number;
+  matches: ScannerResultRow[];
+  watchlist: ScannerResultRow[];
+  scanned: ScannerResultRow[];
+  summary: {
+    totalScanned: number;
+    strongCount: number;
+    watchlistCount: number;
+    weakCount: number;
+    ignoreCount: number;
+  };
   asOf: string;
+};
+
+export type ScannerResultRow = {
+  symbol: string;
+  grade: "STRONG" | "WATCHLIST" | "WEAK" | "IGNORE";
+  totalScore: number;
+  components: {
+    trend: number;
+    pullback: number;
+    stochastic: number;
+    volume: number;
+    riskReward: number;
+  };
+  reasons: string[];
+  confidence: number;
+  entryPrice: number | null;
+  stopLoss: number | null;
+  targetPrice: number | null;
+  riskReward: number | null;
+  timeHorizon: string | null;
+  signalDate: string | null;
+  presentation: {
+    grade: "READY" | "WATCHLIST" | "NOT_READY";
+    tags: string[];
+    explanation: string;
+  };
 };
 
 export type TriggerAutomationRunBody = {

@@ -75,7 +75,42 @@ describe('Signals scanner universe (e2e)', () => {
     const scanned = await request(app.getHttpServer())
       .post('/signals/scan')
       .expect(201);
-    expect(scanned.body.scannedSymbols).toBe(1);
+    expect(scanned.body.scannedSymbols).toBeGreaterThanOrEqual(1);
+    expect(scanned.body.scanned.some((row: { symbol: string }) => row.symbol === coreTicker)).toBe(
+      true,
+    );
+    expect(
+      scanned.body.scanned.some((row: { symbol: string }) => row.symbol === onDemandTicker),
+    ).toBe(false);
+    expect(scanned.body.summary).toEqual(
+      expect.objectContaining({
+        totalScanned: expect.any(Number),
+        strongCount: expect.any(Number),
+        watchlistCount: expect.any(Number),
+        weakCount: expect.any(Number),
+        ignoreCount: expect.any(Number),
+      }),
+    );
+    expect(Array.isArray(scanned.body.matches)).toBe(true);
+    expect(Array.isArray(scanned.body.watchlist)).toBe(true);
+    expect(Array.isArray(scanned.body.scanned)).toBe(true);
+    if (scanned.body.scanned.length > 0) {
+      const first = scanned.body.scanned[0];
+      expect(first).toEqual(
+        expect.objectContaining({
+          symbol: expect.any(String),
+          totalScore: expect.any(Number),
+          grade: expect.any(String),
+          components: expect.any(Object),
+          reasons: expect.any(Array),
+          presentation: expect.objectContaining({
+            grade: expect.any(String),
+            tags: expect.any(Array),
+            explanation: expect.any(String),
+          }),
+        }),
+      );
+    }
 
     const coreSignals = await prisma.signal.findMany({
       where: { symbol: { ticker: coreTicker } },

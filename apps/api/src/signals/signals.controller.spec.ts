@@ -11,6 +11,16 @@ describe('SignalsController', () => {
       upsertedSignals: 2,
       expiredSignals: 1,
       skippedSymbols: 1,
+      matches: [],
+      watchlist: [],
+      scanned: [],
+      summary: {
+        totalScanned: 5,
+        strongCount: 2,
+        watchlistCount: 1,
+        weakCount: 1,
+        ignoreCount: 1,
+      },
       asOf: '2026-04-26T00:00:00.000Z',
     });
     const service = {
@@ -30,6 +40,16 @@ describe('SignalsController', () => {
       upsertedSignals: 2,
       expiredSignals: 1,
       skippedSymbols: 1,
+      matches: [],
+      watchlist: [],
+      scanned: [],
+      summary: {
+        totalScanned: 5,
+        strongCount: 2,
+        watchlistCount: 1,
+        weakCount: 1,
+        ignoreCount: 1,
+      },
       asOf: '2026-04-26T00:00:00.000Z',
     });
   });

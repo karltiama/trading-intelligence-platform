@@ -7,11 +7,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  addTrackedSymbol,
   listOrders,
   listSignals,
   scanSignals,
   type OrderListItem,
   type ScanSignalsSummary,
+  type ScannerResultRow,
   type SignalItem,
 } from "@/lib/api";
 
@@ -28,6 +30,21 @@ function fmtDate(value: string): string {
   return new Date(value).toLocaleString();
 }
 
+function scannerGradeBadgeClass(
+  grade: "STRONG" | "WATCHLIST" | "WEAK" | "IGNORE",
+): string {
+  if (grade === "STRONG") {
+    return "border-emerald-300 bg-emerald-50 text-emerald-900";
+  }
+  if (grade === "WATCHLIST") {
+    return "border-slate-300 bg-slate-100 text-slate-900";
+  }
+  if (grade === "WEAK") {
+    return "border-amber-300 bg-amber-50 text-amber-900";
+  }
+  return "border-rose-300 bg-rose-50 text-rose-900";
+}
+
 export default function SignalsPage(): React.JSX.Element {
   const [signals, setSignals] = useState<SignalItem[]>([]);
   const [orders, setOrders] = useState<OrderListItem[]>([]);
@@ -35,6 +52,15 @@ export default function SignalsPage(): React.JSX.Element {
   const [isLoading, setIsLoading] = useState(true);
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [watchlistBusyBySymbol, setWatchlistBusyBySymbol] = useState<
+    Record<string, boolean>
+  >({});
+  const [watchlistMessageBySymbol, setWatchlistMessageBySymbol] = useState<
+    Record<string, string>
+  >({});
+  const [alertMessageBySymbol, setAlertMessageBySymbol] = useState<
+    Record<string, string>
+  >({});
 
   const loadSignals = useCallback(async () => {
     setIsLoading(true);
@@ -93,6 +119,10 @@ export default function SignalsPage(): React.JSX.Element {
       }),
     [signals],
   );
+  const rankedScanRows = useMemo<ScannerResultRow[]>(
+    () => scanSummary?.scanned ?? [],
+    [scanSummary],
+  );
 
   async function handleScan() {
     setIsScanning(true);
@@ -111,6 +141,41 @@ export default function SignalsPage(): React.JSX.Element {
     } finally {
       setIsScanning(false);
     }
+  }
+
+  async function handleAddToWatchlist(symbol: string) {
+    const ticker = symbol.trim().toUpperCase();
+    if (!ticker) {
+      return;
+    }
+    setWatchlistBusyBySymbol((prev) => ({ ...prev, [ticker]: true }));
+    setWatchlistMessageBySymbol((prev) => ({ ...prev, [ticker]: "" }));
+    try {
+      await addTrackedSymbol(ticker);
+      setWatchlistMessageBySymbol((prev) => ({
+        ...prev,
+        [ticker]: "Added to watchlist.",
+      }));
+    } catch (err: unknown) {
+      setWatchlistMessageBySymbol((prev) => ({
+        ...prev,
+        [ticker]:
+          err instanceof Error ? err.message : "Could not add to watchlist.",
+      }));
+    } finally {
+      setWatchlistBusyBySymbol((prev) => ({ ...prev, [ticker]: false }));
+    }
+  }
+
+  function handleSetAlert(symbol: string) {
+    const ticker = symbol.trim().toUpperCase();
+    if (!ticker) {
+      return;
+    }
+    setAlertMessageBySymbol((prev) => ({
+      ...prev,
+      [ticker]: "Alert setup coming soon.",
+    }));
   }
 
   return (
@@ -147,7 +212,147 @@ export default function SignalsPage(): React.JSX.Element {
         </CardContent>
       </Card>
 
+      {scanSummary ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Scanner V2 Summary</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
+              <div className="rounded-md border p-2">
+                <p className="text-xs text-muted-foreground">Total scanned</p>
+                <p className="text-lg font-semibold">{scanSummary.summary.totalScanned}</p>
+              </div>
+              <div className="rounded-md border p-2">
+                <p className="text-xs text-muted-foreground">Strong setups</p>
+                <p className="text-lg font-semibold">{scanSummary.summary.strongCount}</p>
+              </div>
+              <div className="rounded-md border p-2">
+                <p className="text-xs text-muted-foreground">Watchlist setups</p>
+                <p className="text-lg font-semibold">{scanSummary.summary.watchlistCount}</p>
+              </div>
+              <div className="rounded-md border p-2">
+                <p className="text-xs text-muted-foreground">Weak / ignored</p>
+                <p className="text-lg font-semibold">
+                  {scanSummary.summary.weakCount + scanSummary.summary.ignoreCount}
+                </p>
+              </div>
+            </div>
+            {scanSummary.summary.strongCount === 0 ? (
+              <p className="rounded-md border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900">
+                No perfect setups today. Showing highest-ranked watchlist candidates.
+              </p>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
       {error ? <p className="text-sm text-rose-600">{error}</p> : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Ranked Scanner Results</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {!scanSummary ? (
+            <p className="text-sm text-muted-foreground">
+              Run scan to see ranked diagnostics for every symbol.
+            </p>
+          ) : null}
+          {scanSummary && rankedScanRows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No ranked rows returned. Try running scan again.
+            </p>
+          ) : null}
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2 2xl:grid-cols-3">
+            {rankedScanRows.slice(0, 50).map((row) => (
+              <div key={row.symbol} className="h-full rounded-md border p-3">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <span className="text-base font-semibold">{row.symbol}</span>
+                  <Badge
+                    variant="outline"
+                    className={scannerGradeBadgeClass(
+                      row.presentation.grade === "READY"
+                        ? "STRONG"
+                        : row.presentation.grade === "WATCHLIST"
+                          ? "WATCHLIST"
+                          : "IGNORE",
+                    )}
+                  >
+                    {row.presentation.grade}
+                  </Badge>
+                </div>
+                <p className="text-sm text-muted-foreground">{row.presentation.explanation}</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {row.presentation.tags.slice(0, 4).map((tag) => (
+                    <Badge key={`${row.symbol}-${tag}`} variant="outline">
+                      {tag}
+                    </Badge>
+                  ))}
+                </div>
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                  {row.reasons.slice(0, 4).map((reason) => (
+                    <li key={`${row.symbol}-${reason}`}>{reason}</li>
+                  ))}
+                </ul>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {row.presentation.grade === "READY" ? (
+                    <Button size="sm" asChild>
+                      <Link
+                        href={`/dashboard/orders?${new URLSearchParams({
+                          symbol: row.symbol,
+                        }).toString()}`}
+                      >
+                        Trade
+                      </Link>
+                    </Button>
+                  ) : null}
+                  <Button size="sm" variant="outline" asChild>
+                    <Link
+                      href={`/dashboard/orders?${new URLSearchParams({
+                        symbol: row.symbol,
+                      }).toString()}`}
+                    >
+                      View Chart
+                    </Link>
+                  </Button>
+                  {row.presentation.grade !== "NOT_READY" ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={Boolean(watchlistBusyBySymbol[row.symbol])}
+                      onClick={() => void handleAddToWatchlist(row.symbol)}
+                    >
+                      {watchlistBusyBySymbol[row.symbol]
+                        ? "Adding..."
+                        : "Add to Watchlist"}
+                    </Button>
+                  ) : null}
+                  {row.presentation.grade === "WATCHLIST" ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleSetAlert(row.symbol)}
+                    >
+                      Set Alert
+                    </Button>
+                  ) : null}
+                </div>
+                {watchlistMessageBySymbol[row.symbol] ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {watchlistMessageBySymbol[row.symbol]}
+                  </p>
+                ) : null}
+                {alertMessageBySymbol[row.symbol] ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {alertMessageBySymbol[row.symbol]}
+                  </p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
