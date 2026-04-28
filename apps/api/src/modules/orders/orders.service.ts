@@ -104,10 +104,13 @@ export class OrdersService {
   private async ensureManualSymbolReady(symbol: string): Promise<void> {
     const existing = await this.marketDataRepository.findSymbolByTicker(symbol);
     if (!existing) {
-      await this.marketDataRepository.createTrackedSymbol(
-        symbol,
-        undefined,
-        'ON_DEMAND',
+      throw new BadRequestException(
+        `Symbol ${symbol} is not tracked. Add it first from tracked symbols.`,
+      );
+    }
+    if (!existing.isActive) {
+      throw new BadRequestException(
+        `Symbol ${symbol} is inactive and cannot be traded.`,
       );
     }
     const bars = await this.marketDataService.getBars(symbol, 1);

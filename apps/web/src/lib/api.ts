@@ -356,3 +356,7 @@ export function addTrackedSymbol(ticker: string): Promise<TrackedSymbolRow> {
     ticker: ticker.trim().toUpperCase(),
   });
 }
+
+export function listTrackedSymbols(): Promise<TrackedSymbolRow[]> {
+  return apiGet<TrackedSymbolRow[]>("/symbols");
+}

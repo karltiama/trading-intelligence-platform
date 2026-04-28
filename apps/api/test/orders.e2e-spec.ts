@@ -147,49 +147,8 @@ describe('OrdersController (e2e)', () => {
       .expect(400);
   });
 
-  it('creates ON_DEMAND symbol for unknown manual order and succeeds', async () => {
+  it('rejects unknown manual ticker with 400', async () => {
     const unknownTicker = `NEW${Date.now()}`;
-    const syncSpy = jest
-      .spyOn(marketDataService, 'syncDailyBars')
-      .mockImplementation(async (symbol: string) => {
-        const normalized = symbol.trim().toUpperCase();
-        const created = await prisma.symbol.upsert({
-          where: { ticker: normalized },
-          create: {
-            ticker: normalized,
-            isActive: true,
-            universeType: 'ON_DEMAND',
-            lastSeenAt: new Date(),
-          },
-          update: {
-            lastSeenAt: new Date(),
-          },
-          select: { id: true },
-        });
-        await prisma.dailyPrice.upsert({
-          where: {
-            symbolId_date: {
-              symbolId: created.id,
-              date: new Date('2026-04-25T00:00:00.000Z'),
-            },
-          },
-          create: {
-            symbolId: created.id,
-            date: new Date('2026-04-25T00:00:00.000Z'),
-            open: new Prisma.Decimal(100),
-            high: new Prisma.Decimal(101),
-            low: new Prisma.Decimal(99),
-            close: new Prisma.Decimal(100),
-            volume: new Prisma.Decimal(1000000),
-            source: 'mock-sync',
-          },
-          update: {
-            close: new Prisma.Decimal(100),
-          },
-        });
-        return 1;
-      });
-
     const placed = await request(app.getHttpServer())
       .post('/orders')
       .set('x-user-email', userEmail)
@@ -199,33 +158,9 @@ describe('OrdersController (e2e)', () => {
         quantity: 1,
         source: 'MANUAL',
       })
-      .expect(201);
+      .expect(400);
 
-    expect(placed.body.symbol).toBe(unknownTicker);
-    expect(placed.body.source).toBe('MANUAL');
-
-    const createdSymbol = await prisma.symbol.findUnique({
-      where: { ticker: unknownTicker },
-      select: { universeType: true, lastSeenAt: true },
-    });
-    expect(createdSymbol?.universeType).toBe('ON_DEMAND');
-    expect(createdSymbol?.lastSeenAt).not.toBeNull();
-
-    await prisma.dailyPrice.deleteMany({
-      where: { symbol: { ticker: unknownTicker } },
-    });
-    await prisma.paperFill.deleteMany({
-      where: { symbol: { ticker: unknownTicker } },
-    });
-    await prisma.paperOrder.deleteMany({
-      where: { symbol: { ticker: unknownTicker } },
-    });
-    await prisma.paperPosition.deleteMany({
-      where: { symbol: { ticker: unknownTicker } },
-    });
-    await prisma.symbol.deleteMany({ where: { ticker: unknownTicker } });
-
-    syncSpy.mockRestore();
+    expect(String(placed.body.message)).toContain('not tracked');
   });
 
   it('rejects insufficient cash on large buy', async () => {

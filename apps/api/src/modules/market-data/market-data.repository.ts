@@ -148,6 +148,7 @@ export class MarketDataRepository {
   ): Promise<{
     id: string;
     ticker: string;
+    isActive: boolean;
     universeType: UniverseType;
     lastSeenAt: Date | null;
   } | null> {
@@ -156,6 +157,7 @@ export class MarketDataRepository {
       select: {
         id: true,
         ticker: true,
+        isActive: true,
         universeType: true,
         lastSeenAt: true,
       },
@@ -166,6 +168,22 @@ export class MarketDataRepository {
     await this.prisma.symbol.update({
       where: { ticker },
       data: { lastSeenAt: new Date() },
+    });
+  }
+
+  async getTrackedSymbolByTicker(ticker: string): Promise<TrackedSymbol | null> {
+    return this.prisma.symbol.findUnique({
+      where: { ticker },
+      select: {
+        id: true,
+        ticker: true,
+        name: true,
+        isActive: true,
+        universeType: true,
+        lastSeenAt: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
   }
 

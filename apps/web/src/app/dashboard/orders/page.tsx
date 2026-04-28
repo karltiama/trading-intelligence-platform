@@ -5,14 +5,15 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 import {
-  addTrackedSymbol,
   cancelOrder,
   getSignalById,
+  listTrackedSymbols,
   listOrders,
   placeOrder,
   type OrderListItem,
   type OrderSide,
   type SignalItem,
+  type TrackedSymbolRow,
   type TradeSource,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -92,10 +93,8 @@ function OrdersPageContent({
   const [isLoadingSignal, setIsLoadingSignal] = useState(false);
   const [linkedOrders, setLinkedOrders] = useState<OrderListItem[]>([]);
   const [isLoadingLinked, setIsLoadingLinked] = useState(false);
-  const [addTicker, setAddTicker] = useState("");
-  const [addSymbolMessage, setAddSymbolMessage] = useState<string | null>(null);
-  const [addSymbolError, setAddSymbolError] = useState<string | null>(null);
-  const [isAddingSymbol, setIsAddingSymbol] = useState(false);
+  const [trackedSymbols, setTrackedSymbols] = useState<TrackedSymbolRow[]>([]);
+  const [isLoadingSymbols, setIsLoadingSymbols] = useState(true);
 
   useEffect(() => {
     if (!initialSignalId) {
@@ -151,7 +150,7 @@ function OrdersPageContent({
       const rows = await listOrders();
       setOrders(rows);
       setError(null);
-    } catch (err: unknown) {
+    } catch {
       setOrders([]);
       setError(null);
     } finally {
@@ -175,6 +174,18 @@ function OrdersPageContent({
     }
   }, [initialSignalId]);
 
+  const loadTrackedSymbols = useCallback(async () => {
+    setIsLoadingSymbols(true);
+    try {
+      const rows = await listTrackedSymbols();
+      setTrackedSymbols(rows);
+    } catch {
+      setTrackedSymbols([]);
+    } finally {
+      setIsLoadingSymbols(false);
+    }
+  }, []);
+
   useEffect(() => {
     queueMicrotask(() => {
       void loadOrders();
@@ -186,6 +197,21 @@ function OrdersPageContent({
       void loadLinkedOrders();
     });
   }, [loadLinkedOrders]);
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      void loadTrackedSymbols();
+    });
+  }, [loadTrackedSymbols]);
+
+  const activeTrackedSymbols = useMemo(
+    () => trackedSymbols.filter((row) => row.isActive),
+    [trackedSymbols],
+  );
+  const isManualSymbolValid = useMemo(
+    () => activeTrackedSymbols.some((row) => row.ticker === symbol.trim().toUpperCase()),
+    [activeTrackedSymbols, symbol],
+  );
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -244,24 +270,6 @@ function OrdersPageContent({
     }
   }
 
-  async function handleAddSymbol(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setAddSymbolMessage(null);
-    setAddSymbolError(null);
-    const t = addTicker.trim().toUpperCase();
-    if (!t) return;
-    setIsAddingSymbol(true);
-    try {
-      await addTrackedSymbol(t);
-      setAddSymbolMessage(`${t} added to tracked symbols. Sync daily bars separately (e.g. POST /market-data/sync/:symbol with API key).`);
-      setAddTicker("");
-    } catch (err: unknown) {
-      setAddSymbolError(err instanceof Error ? err.message : "Failed to add symbol.");
-    } finally {
-      setIsAddingSymbol(false);
-    }
-  }
-
   const decisionTitle = signalContext
     ? `${signalContext.strategyName} · ${signalContext.symbol}`
     : symbol.trim()
@@ -314,14 +322,39 @@ function OrdersPageContent({
                 <label className="mb-1 block text-xs text-muted-foreground" htmlFor="order-symbol">
                   Symbol
                 </label>
-                <Input
-                  id="order-symbol"
-                  value={symbol}
-                  onChange={(event) => setSymbol(event.target.value)}
-                  placeholder="Symbol (e.g. AAPL)"
-                  disabled={tradeMode === "signal" && signalModeReady}
-                  required
-                />
+                {tradeMode === "manual" ? (
+                  <select
+                    id="order-symbol"
+                    value={symbol}
+                    onChange={(event) => setSymbol(event.target.value)}
+                    className="h-8 w-full rounded-lg border bg-background px-2.5 text-sm"
+                    disabled={isLoadingSymbols || activeTrackedSymbols.length === 0}
+                    required
+                  >
+                    <option value="">
+                      {isLoadingSymbols
+                        ? "Loading tracked symbols…"
+                        : activeTrackedSymbols.length === 0
+                          ? "No active tracked symbols available"
+                          : "Select tracked symbol"}
+                    </option>
+                    {activeTrackedSymbols.map((row) => (
+                      <option key={row.id} value={row.ticker}>
+                        {row.ticker}
+                        {row.name ? ` — ${row.name}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <Input
+                    id="order-symbol"
+                    value={symbol}
+                    onChange={(event) => setSymbol(event.target.value)}
+                    placeholder="Symbol"
+                    disabled={signalModeReady}
+                    required
+                  />
+                )}
               </div>
               <div>
                 <label className="mb-1 block text-xs text-muted-foreground" htmlFor="order-qty">
@@ -351,7 +384,14 @@ function OrdersPageContent({
                   <option value="SELL">Sell</option>
                 </select>
               </div>
-              <Button type="submit" disabled={isSubmitting || (tradeMode === "signal" && !signalModeReady)}>
+              <Button
+                type="submit"
+                disabled={
+                  isSubmitting ||
+                  (tradeMode === "signal" && !signalModeReady) ||
+                  (tradeMode === "manual" && !isManualSymbolValid)
+                }
+              >
                 {isSubmitting ? "Submitting..." : "Submit"}
               </Button>
             </div>
@@ -431,8 +471,7 @@ function OrdersPageContent({
             </CardHeader>
             <CardContent className="space-y-2 text-sm text-muted-foreground">
               <p>
-                Unknown symbols are allowed for manual orders. The backend will create ON_DEMAND
-                tracking and fetch minimal bars before execution.
+                Manual orders must use an active symbol already tracked in the database.
               </p>
             </CardContent>
           </Card>
@@ -450,37 +489,6 @@ function OrdersPageContent({
           </Card>
         </div>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Track a symbol</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form className="flex flex-col gap-2 sm:flex-row sm:items-end" onSubmit={handleAddSymbol}>
-            <div className="flex-1">
-              <label className="mb-1 block text-xs text-muted-foreground" htmlFor="add-ticker">
-                Ticker
-              </label>
-              <Input
-                id="add-ticker"
-                value={addTicker}
-                onChange={(event) => setAddTicker(event.target.value)}
-                placeholder="e.g. COST"
-                className="max-w-xs"
-              />
-            </div>
-            <Button type="submit" variant="outline" disabled={isAddingSymbol}>
-              {isAddingSymbol ? "Adding…" : "Add to tracked"}
-            </Button>
-          </form>
-          {addSymbolMessage ? (
-            <p className="mt-2 text-sm text-emerald-600 dark:text-emerald-400">{addSymbolMessage}</p>
-          ) : null}
-          {addSymbolError ? (
-            <p className="mt-2 text-sm text-rose-600 dark:text-rose-400">{addSymbolError}</p>
-          ) : null}
-        </CardContent>
-      </Card>
 
       {message ? <p className="text-sm text-emerald-600">{message}</p> : null}
       {error ? <p className="text-sm text-rose-600">{error}</p> : null}

@@ -50,30 +50,22 @@ describe('OrdersService', () => {
     );
   });
 
-  it('creates ON_DEMAND symbol for unknown manual order then updates lastSeenAt', async () => {
+  it('rejects unknown ticker for manual order', async () => {
     (marketDataRepository.findSymbolByTicker as jest.Mock).mockResolvedValue(null);
-    (marketDataRepository.createTrackedSymbol as jest.Mock).mockResolvedValue({
-      id: 'sym-1',
-      ticker: 'AAPL',
-    });
 
-    await service.placeOrder(
-      {
-        symbol: 'aapl',
-        side: 'BUY',
-        quantity: 1,
-        source: 'MANUAL',
-      },
-      'orders-test@local.test',
-    );
-
-    expect(marketDataRepository.createTrackedSymbol).toHaveBeenCalledWith(
-      'AAPL',
-      undefined,
-      'ON_DEMAND',
-    );
-    expect(marketDataService.syncDailyBars).toHaveBeenCalledWith('AAPL', 30);
-    expect(marketDataRepository.touchSymbolLastSeenAt).toHaveBeenCalledWith('AAPL');
+    await expect(
+      service.placeOrder(
+        {
+          symbol: 'aapl',
+          side: 'BUY',
+          quantity: 1,
+          source: 'MANUAL',
+        },
+        'orders-test@local.test',
+      ),
+    ).rejects.toThrow('is not tracked');
+    expect(marketDataService.syncDailyBars).not.toHaveBeenCalled();
+    expect(marketDataRepository.touchSymbolLastSeenAt).not.toHaveBeenCalled();
   });
 });
 

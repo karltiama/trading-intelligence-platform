@@ -11,11 +11,17 @@ export class SymbolsService {
     return this.marketDataRepository.listTrackedSymbols();
   }
 
-  addSymbol(
+  async addSymbol(
     ticker: string,
     name?: string,
     universeType: UniverseType = 'ON_DEMAND',
   ) {
+    const existing = await this.marketDataRepository.getTrackedSymbolByTicker(
+      ticker,
+    );
+    if (existing) {
+      return existing;
+    }
     return this.marketDataRepository.createTrackedSymbol(
       ticker,
       name,
