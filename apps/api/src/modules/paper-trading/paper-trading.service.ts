@@ -16,6 +16,8 @@ export type PlaceMarketOrderInput = {
   symbol: string;
   side: PaperOrderSide;
   quantity: number;
+  /** When set, persisted on the paper order after validating symbol alignment. */
+  signalId?: string;
 };
 
 export type PlaceMarketOrderResult = {
@@ -27,6 +29,7 @@ export type PlaceMarketOrderResult = {
   fillPrice: number;
   fillNotional: number;
   cashBalance: number;
+  signalId: string | null;
 };
 
 export type PaperOrderListItem = {
@@ -39,6 +42,7 @@ export type PaperOrderListItem = {
   requestedAt: string;
   filledAt: string | null;
   canceledAt: string | null;
+  signalId: string | null;
 };
 
 export type PaperOrderPage = {
@@ -70,6 +74,19 @@ export class PaperTradingService {
       throw new ConflictException(`No latest market price available for ${ticker}`);
     }
 
+    let linkedSignalId: string | null = null;
+    const trimmedSignalId = input.signalId?.trim();
+    if (trimmedSignalId) {
+      const link = await this.paperTradingRepository.findSignalSymbolLink(trimmedSignalId);
+      if (!link) {
+        throw new BadRequestException(`Signal not found: ${trimmedSignalId}`);
+      }
+      if (link.symbolId !== symbolQuote.symbolId) {
+        throw new BadRequestException('signalId does not match order symbol.');
+      }
+      linkedSignalId = link.id;
+    }
+
     const fillPrice = symbolQuote.latestClose;
     const fillNotional = fillPrice.mul(quantity);
     const existingPosition = await this.paperTradingRepository.findPosition(
@@ -82,6 +99,7 @@ export class PaperTradingService {
         accountId: account.id,
         ticker,
         symbolId: symbolQuote.symbolId,
+        signalId: linkedSignalId,
         quantity,
         fillPrice,
         fillNotional,
@@ -100,6 +118,7 @@ export class PaperTradingService {
       accountId: account.id,
       ticker,
       symbolId: symbolQuote.symbolId,
+      signalId: linkedSignalId,
       quantity,
       fillPrice,
       fillNotional,
@@ -161,6 +180,7 @@ export class PaperTradingService {
       requestedAt: row.requestedAt.toISOString(),
       filledAt: row.filledAt?.toISOString() ?? null,
       canceledAt: row.canceledAt?.toISOString() ?? null,
+      signalId: row.signalId,
     }));
   }
 
@@ -168,6 +188,7 @@ export class PaperTradingService {
     userEmail: string;
     accountId?: string;
     symbol?: string;
+    signalId?: string;
     status?: PaperOrderStatus;
     limit: number;
     cursor?: { requestedAt: Date; orderId: string };
@@ -175,6 +196,7 @@ export class PaperTradingService {
     const account = await this.resolveScopedAccount(input.userEmail, input.accountId);
     const rows = await this.paperTradingRepository.listOrders(account.id, {
       symbol: input.symbol,
+      signalId: input.signalId,
       status: input.status,
       limit: input.limit + 1,
       cursorRequestedAt: input.cursor?.requestedAt,
@@ -193,6 +215,7 @@ export class PaperTradingService {
       requestedAt: row.requestedAt.toISOString(),
       filledAt: row.filledAt?.toISOString() ?? null,
       canceledAt: row.canceledAt?.toISOString() ?? null,
+      signalId: row.signalId,
     }));
 
     const last = visibleRows[visibleRows.length - 1];
@@ -208,6 +231,7 @@ export class PaperTradingService {
     accountId: string;
     ticker: string;
     symbolId: string;
+    signalId: string | null;
     quantity: Prisma.Decimal;
     fillPrice: Prisma.Decimal;
     fillNotional: Prisma.Decimal;
@@ -235,6 +259,7 @@ export class PaperTradingService {
     const created = await this.paperTradingRepository.createFilledOrder({
       accountId: params.accountId,
       symbolId: params.symbolId,
+      signalId: params.signalId,
       side: 'BUY',
       quantity: params.quantity,
       price: params.fillPrice,
@@ -261,6 +286,7 @@ export class PaperTradingService {
       fillPrice: params.fillPrice.toNumber(),
       fillNotional: params.fillNotional.toNumber(),
       cashBalance: nextCashBalance.toNumber(),
+      signalId: params.signalId,
     };
   }
 
@@ -268,6 +294,7 @@ export class PaperTradingService {
     accountId: string;
     ticker: string;
     symbolId: string;
+    signalId: string | null;
     quantity: Prisma.Decimal;
     fillPrice: Prisma.Decimal;
     fillNotional: Prisma.Decimal;
@@ -294,6 +321,7 @@ export class PaperTradingService {
     const created = await this.paperTradingRepository.createFilledOrder({
       accountId: params.accountId,
       symbolId: params.symbolId,
+      signalId: params.signalId,
       side: 'SELL',
       quantity: params.quantity,
       price: params.fillPrice,
@@ -320,6 +348,7 @@ export class PaperTradingService {
       fillPrice: params.fillPrice.toNumber(),
       fillNotional: params.fillNotional.toNumber(),
       cashBalance: nextCashBalance.toNumber(),
+      signalId: params.signalId,
     };
   }
 
@@ -396,6 +425,7 @@ export class PaperTradingService {
         fillPrice: params.order.fillPrice,
         fillNotional: params.order.fillNotional,
         cashBalance: params.order.cashBalance,
+        signalId: params.order.signalId,
       },
     });
   }

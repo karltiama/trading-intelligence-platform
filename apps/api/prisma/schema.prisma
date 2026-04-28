@@ -149,6 +149,7 @@ model Signal {
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
   symbol       Symbol       @relation(fields: [symbolId], references: [id], onDelete: Cascade)
+  paperOrders  PaperOrder[]
 
   @@index([symbolId])
   @@index([status])
@@ -213,6 +214,7 @@ model PaperOrder {
   id          String           @id @default(cuid())
   accountId   String
   symbolId    String
+  signalId    String?
   side        PaperOrderSide
   type        PaperOrderType   @default(MARKET)
   status      PaperOrderStatus @default(NEW)
@@ -224,12 +226,14 @@ model PaperOrder {
   updatedAt   DateTime         @updatedAt
   account     PaperAccount     @relation(fields: [accountId], references: [id], onDelete: Cascade)
   symbol      Symbol           @relation(fields: [symbolId], references: [id], onDelete: Restrict)
+  signal      Signal?          @relation(fields: [signalId], references: [id], onDelete: SetNull)
   fill        PaperFill?
   automationSignalExecutions AutomationSignalExecution[]
 
   @@index([accountId, requestedAt])
   @@index([symbolId, requestedAt])
   @@index([status, requestedAt])
+  @@index([signalId])
 }
 
 model PaperFill {

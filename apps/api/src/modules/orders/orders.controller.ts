@@ -16,6 +16,7 @@ type PlaceOrderBody = {
   symbol?: string;
   side?: string;
   quantity?: number;
+  signalId?: string;
 };
 
 @Controller('orders')
@@ -51,11 +52,13 @@ export class OrdersController {
       queryUserEmail,
     });
     const accountId = accountIdRaw?.trim() || undefined;
+    const signalId = body.signalId?.trim() || undefined;
     return this.ordersService.placeOrder(
       {
         symbol,
         side: sideRaw as PaperOrderSide,
         quantity: body.quantity,
+        signalId,
       },
       principal.userEmail,
       accountId,
@@ -91,6 +94,7 @@ export class OrdersController {
     @Query('offset') offsetRaw?: string,
     @Query('cursor') cursorRaw?: string,
     @Query('accountId') accountIdRaw?: string,
+    @Query('signalId') signalIdRaw?: string,
   ) {
     let limit: number | undefined;
     if (limitRaw) {
@@ -122,6 +126,7 @@ export class OrdersController {
     }
 
     const symbol = symbolRaw?.trim().toUpperCase() || undefined;
+    const signalId = signalIdRaw?.trim() || undefined;
     const accountId = accountIdRaw?.trim() || undefined;
     const principal = this.accountContextService.resolvePrincipal({
       headerUserEmail,
@@ -132,6 +137,7 @@ export class OrdersController {
         userEmail: principal.userEmail,
         accountId,
         symbol,
+        signalId,
         status,
         limit: limit ?? 25,
         cursor: cursorRaw,
@@ -140,6 +146,7 @@ export class OrdersController {
     return this.ordersService.listOrders(principal.userEmail, {
       accountId,
       symbol,
+      signalId,
       status,
       limit,
       offset,

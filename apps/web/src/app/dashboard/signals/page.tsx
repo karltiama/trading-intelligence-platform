@@ -7,8 +7,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  listOrders,
   listSignals,
   scanSignals,
+  type OrderListItem,
   type ScanSignalsSummary,
   type SignalItem,
 } from "@/lib/api";
@@ -28,6 +30,7 @@ function fmtDate(value: string): string {
 
 export default function SignalsPage(): React.JSX.Element {
   const [signals, setSignals] = useState<SignalItem[]>([]);
+  const [orders, setOrders] = useState<OrderListItem[]>([]);
   const [scanSummary, setScanSummary] = useState<ScanSignalsSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isScanning, setIsScanning] = useState(false);
@@ -50,8 +53,35 @@ export default function SignalsPage(): React.JSX.Element {
   }, []);
 
   useEffect(() => {
-    void loadSignals();
+    queueMicrotask(() => {
+      void loadSignals();
+    });
   }, [loadSignals]);
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      void listOrders({ limit: 100 })
+        .then(setOrders)
+        .catch(() => setOrders([]));
+    });
+  }, []);
+
+  const ordersBySignalId = useMemo(() => {
+    const map = new Map<string, OrderListItem[]>();
+    for (const order of orders) {
+      if (!order.signalId) continue;
+      const list = map.get(order.signalId) ?? [];
+      list.push(order);
+      map.set(order.signalId, list);
+    }
+    for (const list of map.values()) {
+      list.sort(
+        (a, b) =>
+          new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime(),
+      );
+    }
+    return map;
+  }, [orders]);
 
   const sortedSignals = useMemo(
     () =>
@@ -71,6 +101,11 @@ export default function SignalsPage(): React.JSX.Element {
       const summary = await scanSignals();
       setScanSummary(summary);
       await loadSignals();
+      try {
+        setOrders(await listOrders({ limit: 100 }));
+      } catch {
+        setOrders([]);
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to run signal scan.");
     } finally {
@@ -127,7 +162,9 @@ export default function SignalsPage(): React.JSX.Element {
           ) : null}
 
           {!isLoading &&
-            sortedSignals.map((signal) => (
+            sortedSignals.map((signal) => {
+              const linked = ordersBySignalId.get(signal.id) ?? [];
+              return (
               <div key={signal.id} className="rounded-md border p-3">
                 <div className="mb-2 flex flex-wrap items-center gap-2">
                   <span className="text-base font-semibold">{signal.symbol}</span>
@@ -146,16 +183,35 @@ export default function SignalsPage(): React.JSX.Element {
                   <p>Signal date: {fmtDate(signal.signalDate)}</p>
                 </div>
                 <p className="mt-2 text-sm text-muted-foreground">{signal.reason}</p>
+                {linked.length > 0 ? (
+                  <div className="mt-3 rounded-md border border-dashed bg-muted/20 p-2">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Linked paper orders
+                    </p>
+                    <ul className="mt-1 space-y-1 text-xs">
+                      {linked.map((o) => (
+                        <li key={o.orderId}>
+                          {fmtDate(o.requestedAt)} · {o.side} {o.quantity} ·{" "}
+                          <span className="font-medium">{o.status}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
                 <div className="mt-3">
                   <Link
-                    href={`/dashboard/orders?symbol=${encodeURIComponent(signal.symbol)}`}
+                    href={`/dashboard/orders?${new URLSearchParams({
+                      symbol: signal.symbol,
+                      signalId: signal.id,
+                    }).toString()}`}
                     className="text-sm font-medium text-primary hover:underline"
                   >
                     Go to paper trade
                   </Link>
                 </div>
               </div>
-            ))}
+            );
+            })}
         </CardContent>
       </Card>
     </div>

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ChartCard } from "@/components/dashboard/chart-card";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { InsightsPanel } from "@/components/dashboard/insights-panel";
+import { MorningRunbookCard } from "@/components/dashboard/morning-runbook-card";
 import { TodaysSetups } from "@/components/dashboard/todays-setups";
 import { WatchlistTable } from "@/components/dashboard/watchlist-table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -93,6 +94,8 @@ export default function DashboardPage(): React.JSX.Element {
             Snapshot of your paper account, watchlist, and active setups.
           </p>
         </div>
+
+        <MorningRunbookCard />
 
         {isLoading ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">

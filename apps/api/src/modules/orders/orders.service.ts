@@ -6,6 +6,7 @@ export type PlaceOrderInput = {
   symbol: string;
   side: PaperOrderSide;
   quantity: number;
+  signalId?: string;
 };
 
 export type AttributedOrder = {
@@ -18,6 +19,7 @@ export type AttributedOrder = {
   fillPrice: number;
   fillNotional: number;
   cashBalance: number;
+  signalId: string | null;
 };
 
 export type AttributedOrderListItem = {
@@ -31,11 +33,13 @@ export type AttributedOrderListItem = {
   requestedAt: string;
   filledAt: string | null;
   canceledAt: string | null;
+  signalId: string | null;
 };
 
 export type OrdersListQuery = {
   accountId?: string;
   symbol?: string;
+  signalId?: string;
   status?: PaperOrderStatus;
   limit?: number;
   offset?: number;
@@ -89,7 +93,13 @@ export class OrdersService {
   ): Promise<AttributedOrderListItem[]> {
     const rows = await this.paperTradingService.listOrders(
       userEmail,
-      query,
+      {
+        symbol: query.symbol,
+        signalId: query.signalId,
+        status: query.status,
+        limit: query.limit,
+        offset: query.offset,
+      },
       query.accountId,
     );
     return rows.map((row) => ({
@@ -102,6 +112,7 @@ export class OrdersService {
     userEmail: string;
     accountId?: string;
     symbol?: string;
+    signalId?: string;
     status?: PaperOrderStatus;
     limit: number;
     cursor?: string;
@@ -111,6 +122,7 @@ export class OrdersService {
       userEmail: input.userEmail,
       accountId: input.accountId,
       symbol: input.symbol,
+      signalId: input.signalId,
       status: input.status,
       limit: input.limit,
       cursor,

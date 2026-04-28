@@ -123,17 +123,3 @@ export const insights: Insight[] = [
   },
 ];
 
-export type Setup = {
-  id: string;
-  symbol: string;
-  confidencePct: number;
-  entry: string;
-  stop: string;
-  riskReward: string;
-};
-
-export const todaysSetups: Setup[] = [
-  { id: "setup-aapl", symbol: "AAPL", confidencePct: 78, entry: "$193.20", stop: "$190.40", riskReward: "1:2.4" },
-  { id: "setup-nvda", symbol: "NVDA", confidencePct: 84, entry: "$125.10", stop: "$121.90", riskReward: "1:3.1" },
-  { id: "setup-msft", symbol: "MSFT", confidencePct: 66, entry: "$413.00", stop: "$408.50", riskReward: "1:1.8" },
-];

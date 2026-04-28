@@ -101,15 +101,19 @@ export default function AutomationPage(): React.JSX.Element {
   }, []);
 
   useEffect(() => {
-    void loadRuns();
+    queueMicrotask(() => {
+      void loadRuns();
+    });
   }, [loadRuns]);
 
   useEffect(() => {
-    if (!selectedRunId) {
-      setSignals([]);
-      return;
-    }
-    void loadSignals(selectedRunId);
+    queueMicrotask(() => {
+      if (!selectedRunId) {
+        setSignals([]);
+        return;
+      }
+      void loadSignals(selectedRunId);
+    });
   }, [selectedRunId, loadSignals]);
 
   async function handleRun(event: React.FormEvent<HTMLFormElement>) {

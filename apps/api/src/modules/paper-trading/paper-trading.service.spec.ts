@@ -12,6 +12,7 @@ describe('PaperTradingService', () => {
   const repository = {
     resolveAccountForUser: jest.fn(),
     findSymbolQuote: jest.fn(),
+    findSignalSymbolLink: jest.fn(),
     findPosition: jest.fn(),
     createFilledOrder: jest.fn(),
     updateAccountCash: jest.fn(),
@@ -43,6 +44,7 @@ describe('PaperTradingService', () => {
       ticker: 'AAPL',
       latestClose: new Prisma.Decimal(100),
     });
+    (repository.findSignalSymbolLink as jest.Mock).mockResolvedValue(null);
     (repository.findPosition as jest.Mock).mockResolvedValue(null);
     (repository.createFilledOrder as jest.Mock).mockResolvedValue({
       orderId: 'ord-1',
@@ -64,6 +66,8 @@ describe('PaperTradingService', () => {
     expect(result.fillPrice).toBe(100);
     expect(result.fillNotional).toBe(500);
     expect(result.cashBalance).toBe(500);
+    expect(result.signalId).toBeNull();
+    expect(repository.findSignalSymbolLink).not.toHaveBeenCalled();
   });
 
   it('rejects BUY when cash is insufficient', async () => {
@@ -78,6 +82,7 @@ describe('PaperTradingService', () => {
       ticker: 'AAPL',
       latestClose: new Prisma.Decimal(100),
     });
+    (repository.findSignalSymbolLink as jest.Mock).mockResolvedValue(null);
     (repository.findPosition as jest.Mock).mockResolvedValue(null);
 
     await expect(
@@ -101,6 +106,7 @@ describe('PaperTradingService', () => {
       ticker: 'AAPL',
       latestClose: new Prisma.Decimal(100),
     });
+    (repository.findSignalSymbolLink as jest.Mock).mockResolvedValue(null);
     (repository.findPosition as jest.Mock).mockResolvedValue(null);
 
     await expect(
@@ -120,6 +126,7 @@ describe('PaperTradingService', () => {
       currency: 'USD',
     });
     (repository.findSymbolQuote as jest.Mock).mockResolvedValue(null);
+    (repository.findSignalSymbolLink as jest.Mock).mockResolvedValue(null);
 
     await expect(
       service.placeMarketOrder({
@@ -157,5 +164,79 @@ describe('PaperTradingService', () => {
         quantity: 0,
       }, 'paper-spec@local.test'),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects signalId when signal symbol does not match order symbol', async () => {
+    (repository.resolveAccountForUser as jest.Mock).mockResolvedValue({
+      id: 'acct-1',
+      startingCash: new Prisma.Decimal(100000),
+      cashBalance: new Prisma.Decimal(1000),
+      currency: 'USD',
+    });
+    (repository.findSymbolQuote as jest.Mock).mockResolvedValue({
+      symbolId: 'sym-1',
+      ticker: 'AAPL',
+      latestClose: new Prisma.Decimal(100),
+    });
+    (repository.findSignalSymbolLink as jest.Mock).mockResolvedValue({
+      id: 'sig-msft',
+      symbolId: 'sym-msft',
+    });
+
+    await expect(
+      service.placeMarketOrder(
+        {
+          symbol: 'AAPL',
+          side: 'BUY',
+          quantity: 1,
+          signalId: 'sig-msft',
+        },
+        'paper-spec@local.test',
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(repository.createFilledOrder).not.toHaveBeenCalled();
+  });
+
+  it('persists signalId on filled buy when signal matches symbol', async () => {
+    (repository.resolveAccountForUser as jest.Mock).mockResolvedValue({
+      id: 'acct-1',
+      startingCash: new Prisma.Decimal(100000),
+      cashBalance: new Prisma.Decimal(1000),
+      currency: 'USD',
+    });
+    (repository.findSymbolQuote as jest.Mock).mockResolvedValue({
+      symbolId: 'sym-1',
+      ticker: 'AAPL',
+      latestClose: new Prisma.Decimal(100),
+    });
+    (repository.findSignalSymbolLink as jest.Mock).mockResolvedValue({
+      id: 'sig-1',
+      symbolId: 'sym-1',
+    });
+    (repository.findPosition as jest.Mock).mockResolvedValue(null);
+    (repository.createFilledOrder as jest.Mock).mockResolvedValue({
+      orderId: 'ord-1',
+      filledAt: new Date(),
+    });
+    (repository.updateAccountCash as jest.Mock).mockResolvedValue(undefined);
+    (repository.upsertPosition as jest.Mock).mockResolvedValue(undefined);
+
+    const result = await service.placeMarketOrder(
+      {
+        symbol: 'AAPL',
+        side: 'BUY',
+        quantity: 1,
+        signalId: 'sig-1',
+      },
+      'paper-spec@local.test',
+    );
+
+    expect(result.signalId).toBe('sig-1');
+    expect(repository.createFilledOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        signalId: 'sig-1',
+        symbolId: 'sym-1',
+      }),
+    );
   });
 });

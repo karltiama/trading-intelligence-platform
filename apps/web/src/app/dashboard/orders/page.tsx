@@ -1,13 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import {
   cancelOrder,
+  getSignalById,
   listOrders,
   placeOrder,
   type OrderListItem,
   type OrderSide,
+  type SignalItem,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,6 +30,15 @@ function formatDate(value: string): string {
   return new Date(value).toLocaleString();
 }
 
+function fmtUsd(value: number | null): string {
+  if (value === null) return "—";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
 function statusVariant(
   status: OrderListItem["status"],
 ): "default" | "secondary" | "destructive" | "outline" {
@@ -35,8 +47,16 @@ function statusVariant(
   return "outline";
 }
 
-export default function OrdersPage(): React.JSX.Element {
-  const [symbol, setSymbol] = useState("");
+type OrdersPageContentProps = {
+  initialSymbol: string;
+  initialSignalId: string;
+};
+
+function OrdersPageContent({
+  initialSymbol,
+  initialSignalId,
+}: OrdersPageContentProps): React.JSX.Element {
+  const [symbol, setSymbol] = useState(() => initialSymbol.trim().toUpperCase());
   const [quantity, setQuantity] = useState("1");
   const [side, setSide] = useState<OrderSide>("BUY");
   const [orders, setOrders] = useState<OrderListItem[]>([]);
@@ -44,6 +64,50 @@ export default function OrdersPage(): React.JSX.Element {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [signalContext, setSignalContext] = useState<SignalItem | null>(null);
+  const [signalLoadError, setSignalLoadError] = useState<string | null>(null);
+  const [isLoadingSignal, setIsLoadingSignal] = useState(false);
+  const [linkedOrders, setLinkedOrders] = useState<OrderListItem[]>([]);
+  const [isLoadingLinked, setIsLoadingLinked] = useState(false);
+
+  useEffect(() => {
+    if (!initialSignalId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setIsLoadingSignal(true);
+      setSignalLoadError(null);
+    });
+
+    void getSignalById(initialSignalId)
+      .then((row) => {
+        if (!cancelled) {
+          setSignalContext(row);
+          setSymbol(row.symbol.toUpperCase());
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setSignalContext(null);
+          setSignalLoadError(
+            err instanceof Error ? err.message : "Could not load signal details.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsLoadingSignal(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialSignalId]);
 
   const sortedOrders = useMemo(
     () =>
@@ -67,9 +131,33 @@ export default function OrdersPage(): React.JSX.Element {
     }
   }, []);
 
+  const loadLinkedOrders = useCallback(async () => {
+    if (!initialSignalId.trim()) {
+      setLinkedOrders([]);
+      return;
+    }
+    setIsLoadingLinked(true);
+    try {
+      const rows = await listOrders({ signalId: initialSignalId.trim(), limit: 25 });
+      setLinkedOrders(rows);
+    } catch {
+      setLinkedOrders([]);
+    } finally {
+      setIsLoadingLinked(false);
+    }
+  }, [initialSignalId]);
+
   useEffect(() => {
-    void loadOrders();
+    queueMicrotask(() => {
+      void loadOrders();
+    });
   }, [loadOrders]);
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      void loadLinkedOrders();
+    });
+  }, [loadLinkedOrders]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -82,10 +170,13 @@ export default function OrdersPage(): React.JSX.Element {
         symbol: symbol.trim().toUpperCase(),
         side,
         quantity: parsedQty,
+        ...(initialSignalId.trim()
+          ? { signalId: initialSignalId.trim() }
+          : {}),
       });
       setMessage("Order submitted successfully.");
-      setSymbol("");
       await loadOrders();
+      await loadLinkedOrders();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to place order.");
     } finally {
@@ -104,6 +195,12 @@ export default function OrdersPage(): React.JSX.Element {
       setError(err instanceof Error ? err.message : "Failed to cancel order.");
     }
   }
+
+  const decisionTitle = signalContext
+    ? `${signalContext.strategyName} · ${signalContext.symbol}`
+    : symbol.trim()
+      ? `Manual check for ${symbol.trim().toUpperCase()}`
+      : "—";
 
   return (
     <div className="flex min-h-svh flex-col gap-6 p-4 md:p-6">
@@ -157,22 +254,29 @@ export default function OrdersPage(): React.JSX.Element {
             <CardTitle className="text-base">Decision Context</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
+            {isLoadingSignal ? (
+              <p className="text-muted-foreground">Loading signal…</p>
+            ) : null}
+            {!isLoadingSignal && signalLoadError ? (
+              <p className="text-rose-600 dark:text-rose-400">{signalLoadError}</p>
+            ) : null}
             <div>
               <p className="text-xs text-muted-foreground">Setup / Signal</p>
-              <p className="font-medium">
-                {symbol.trim() ? `Manual check for ${symbol.trim().toUpperCase()}` : "-"}
-              </p>
+              <p className="font-medium">{decisionTitle}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Reason</p>
               <p className="text-muted-foreground">
-                Confirm recent close behavior before placing a paper order.
+                {signalContext?.reason ??
+                  "Confirm recent close behavior before placing a paper order."}
               </p>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="rounded-md border p-2">
                 <p className="text-xs text-muted-foreground">Risk Status</p>
-                <p className="font-medium">Pending checks</p>
+                <p className="font-medium">
+                  {signalContext ? "From scanner" : "Pending checks"}
+                </p>
               </div>
               <div className="rounded-md border p-2">
                 <p className="text-xs text-muted-foreground">Side</p>
@@ -180,13 +284,25 @@ export default function OrdersPage(): React.JSX.Element {
               </div>
               <div className="rounded-md border p-2">
                 <p className="text-xs text-muted-foreground">Entry</p>
-                <p className="font-medium">Market (manual)</p>
+                <p className="font-medium">
+                  {signalContext ? fmtUsd(signalContext.entryPrice) : "Market (manual)"}
+                </p>
               </div>
               <div className="rounded-md border p-2">
                 <p className="text-xs text-muted-foreground">Stop / Target</p>
-                <p className="font-medium">Not set</p>
+                <p className="font-medium">
+                  {signalContext
+                    ? `${fmtUsd(signalContext.stopLoss)} / ${fmtUsd(signalContext.targetPrice)}`
+                    : "Not set"}
+                </p>
               </div>
             </div>
+            {signalContext?.riskReward != null ? (
+              <p className="text-xs text-muted-foreground">
+                R:R {signalContext.riskReward.toFixed(2)} · Horizon{" "}
+                {signalContext.timeHorizon ?? "—"}
+              </p>
+            ) : null}
           </CardContent>
         </Card>
         <div className="lg:col-span-2">
@@ -205,6 +321,43 @@ export default function OrdersPage(): React.JSX.Element {
 
       {message ? <p className="text-sm text-emerald-600">{message}</p> : null}
       {error ? <p className="text-sm text-rose-600">{error}</p> : null}
+
+      {initialSignalId.trim() ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Paper trades linked to this signal</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            {isLoadingLinked ? (
+              <p className="text-muted-foreground">Loading linked orders…</p>
+            ) : null}
+            {!isLoadingLinked && linkedOrders.length === 0 ? (
+              <p className="text-muted-foreground">
+                No orders recorded for this signal yet. Submitting an order from this page
+                stores the link automatically.
+              </p>
+            ) : null}
+            {!isLoadingLinked && linkedOrders.length > 0 ? (
+              <ul className="space-y-1.5">
+                {linkedOrders.map((o) => (
+                  <li
+                    key={o.orderId}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2"
+                  >
+                    <span className="text-xs text-muted-foreground">
+                      {formatDate(o.requestedAt)}
+                    </span>
+                    <span className="font-medium">
+                      {o.side} {o.quantity} {o.symbol}
+                    </span>
+                    <Badge variant={statusVariant(o.status)}>{o.status}</Badge>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>
@@ -268,5 +421,34 @@ export default function OrdersPage(): React.JSX.Element {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function OrdersSearchBridge(): React.JSX.Element {
+  const searchParams = useSearchParams();
+  const symbolRaw = searchParams.get("symbol")?.trim() ?? "";
+  const signalIdRaw = searchParams.get("signalId")?.trim() ?? "";
+  const remountKey = `${symbolRaw}|${signalIdRaw}`;
+
+  return (
+    <OrdersPageContent
+      key={remountKey}
+      initialSymbol={symbolRaw}
+      initialSignalId={signalIdRaw}
+    />
+  );
+}
+
+export default function OrdersPage(): React.JSX.Element {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-svh flex-col gap-4 p-4 md:p-6">
+          <p className="text-sm text-muted-foreground">Loading orders…</p>
+        </div>
+      }
+    >
+      <OrdersSearchBridge />
+    </Suspense>
   );
 }

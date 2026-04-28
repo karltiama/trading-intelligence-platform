@@ -133,12 +133,14 @@ export type OrderListItem = {
   requestedAt: string;
   filledAt: string | null;
   canceledAt: string | null;
+  signalId: string | null;
 };
 
 export type PlaceOrderBody = {
   symbol: string;
   side: OrderSide;
   quantity: number;
+  signalId?: string;
 };
 
 export type PlaceOrderResponse = {
@@ -151,6 +153,7 @@ export type PlaceOrderResponse = {
   fillPrice: number;
   fillNotional: number;
   cashBalance: number;
+  signalId: string | null;
 };
 
 export type CancelOrderResponse = {
@@ -261,8 +264,19 @@ export function getPortfolioPositions(): Promise<PortfolioPosition[]> {
   return apiGet<PortfolioPosition[]>("/portfolio/positions");
 }
 
-export function listOrders(): Promise<OrderListItem[]> {
-  return apiGet<OrderListItem[]>("/orders");
+export function listOrders(params?: {
+  signalId?: string;
+  limit?: number;
+}): Promise<OrderListItem[]> {
+  const query = new URLSearchParams();
+  if (params?.signalId?.trim()) {
+    query.set("signalId", params.signalId.trim());
+  }
+  if (params?.limit != null) {
+    query.set("limit", String(params.limit));
+  }
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return apiGet<OrderListItem[]>(`/orders${suffix}`);
 }
 
 export function placeOrder(body: PlaceOrderBody): Promise<PlaceOrderResponse> {
@@ -310,4 +324,8 @@ export function listSignals(params?: {
   if (params?.symbol) query.set("symbol", params.symbol.trim().toUpperCase());
   const suffix = query.toString() ? `?${query.toString()}` : "";
   return apiGet<SignalItem[]>(`/signals${suffix}`);
+}
+
+export function getSignalById(signalId: string): Promise<SignalItem> {
+  return apiGet<SignalItem>(`/signals/${encodeURIComponent(signalId.trim())}`);
 }

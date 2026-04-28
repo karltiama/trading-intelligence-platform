@@ -49,10 +49,12 @@ export type PaperOrderListRow = {
   requestedAt: Date;
   filledAt: Date | null;
   canceledAt: Date | null;
+  signalId: string | null;
 };
 
 export type PaperOrderListFilters = {
   symbol?: string;
+  signalId?: string;
   status?: PaperOrderStatus;
   limit?: number;
   offset?: number;
@@ -264,6 +266,13 @@ export class PaperTradingRepository {
     };
   }
 
+  async findSignalSymbolLink(signalId: string): Promise<{ id: string; symbolId: string } | null> {
+    return this.prisma.signal.findUnique({
+      where: { id: signalId },
+      select: { id: true, symbolId: true },
+    });
+  }
+
   async findPosition(
     accountId: string,
     symbolId: string,
@@ -282,6 +291,7 @@ export class PaperTradingRepository {
   async createFilledOrder(params: {
     accountId: string;
     symbolId: string;
+    signalId?: string | null;
     side: PaperOrderSide;
     quantity: Prisma.Decimal;
     price: Prisma.Decimal;
@@ -293,6 +303,7 @@ export class PaperTradingRepository {
         data: {
           accountId: params.accountId,
           symbolId: params.symbolId,
+          signalId: params.signalId ?? null,
           side: params.side,
           type: 'MARKET',
           status: 'FILLED',
@@ -401,6 +412,7 @@ export class PaperTradingRepository {
       where: {
         accountId,
         status: filters.status,
+        signalId: filters.signalId?.trim() || undefined,
         symbol: filters.symbol
           ? { ticker: filters.symbol.toUpperCase() }
           : undefined,
@@ -411,6 +423,7 @@ export class PaperTradingRepository {
       skip: filters.offset ?? 0,
       select: {
         id: true,
+        signalId: true,
         side: true,
         type: true,
         status: true,
@@ -432,6 +445,7 @@ export class PaperTradingRepository {
       requestedAt: row.requestedAt,
       filledAt: row.filledAt,
       canceledAt: row.canceledAt,
+      signalId: row.signalId,
     }));
   }
 
