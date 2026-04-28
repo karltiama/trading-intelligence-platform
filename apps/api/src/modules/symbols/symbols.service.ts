@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { UniverseType } from '@prisma/client';
 import { MarketDataRepository } from '../market-data/market-data.repository';
 import { DEFAULT_SYNC_SYMBOLS } from '../market-data/market-data.constants';
 
@@ -10,8 +11,16 @@ export class SymbolsService {
     return this.marketDataRepository.listTrackedSymbols();
   }
 
-  addSymbol(ticker: string, name?: string) {
-    return this.marketDataRepository.createTrackedSymbol(ticker, name);
+  addSymbol(
+    ticker: string,
+    name?: string,
+    universeType: UniverseType = 'ON_DEMAND',
+  ) {
+    return this.marketDataRepository.createTrackedSymbol(
+      ticker,
+      name,
+      universeType,
+    );
   }
 
   async bootstrapDefaults() {

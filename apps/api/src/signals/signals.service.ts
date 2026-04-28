@@ -45,7 +45,7 @@ export class SignalsService {
     const strategyName = StrategyName.TREND_PULLBACK;
 
     const symbols = await this.prisma.symbol.findMany({
-      where: { isActive: true },
+      where: { isActive: true, universeType: 'CORE' },
       orderBy: { ticker: 'asc' },
       select: {
         id: true,

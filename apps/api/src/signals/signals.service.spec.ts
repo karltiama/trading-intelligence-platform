@@ -89,6 +89,14 @@ describe('SignalsService', () => {
       },
       select: { id: true, signalKey: true },
     });
+    expect(findManySymbols).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          isActive: true,
+          universeType: 'CORE',
+        },
+      }),
+    );
   });
 });
 

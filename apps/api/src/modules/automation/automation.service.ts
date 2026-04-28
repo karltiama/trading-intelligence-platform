@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PaperOrderSide } from '@prisma/client';
+import { PaperOrderSide, TradeSource } from '@prisma/client';
 import {
   PaperTradingService,
   type PlaceMarketOrderResult,
@@ -16,6 +16,7 @@ import {
   AutomationRepository,
   type AutomationRunListFilters,
 } from './automation.repository';
+import { buildDeterministicSignalKey } from './deterministic-signal-key';
 
 export type AutomationSignalInput = {
   symbolId: string;
@@ -127,7 +128,7 @@ export class AutomationService {
       strategy,
       triggeredAt,
     });
-    const run = await this.automationRepository.createRun({
+    const run = await this.automationRepository.createAutomationRun({
       strategy,
       userEmail,
     });
@@ -147,9 +148,14 @@ export class AutomationService {
     let failed = 0;
 
     for (const signal of params.signals) {
-      const signalKey = this.toSignalKey(strategy, signal);
+      const signalKey = buildDeterministicSignalKey({
+        strategy,
+        symbol: signal.symbol,
+        side: signal.side,
+        signalAt: signal.signalAt,
+      });
 
-      const execution = await this.automationRepository.createSignalExecution({
+      const execution = await this.automationRepository.createSignalExecutionAttempt({
         runId: run.id,
         signalKey,
         symbolId: signal.symbolId,
@@ -170,7 +176,7 @@ export class AutomationService {
       });
       if (!risk.allowed) {
         rejectedRisk += 1;
-        await this.automationRepository.markSignalExecutionRejectedRisk({
+        await this.automationRepository.markSignalExecutionRejected({
           executionId: execution.id,
           reason: risk.reason,
         });
@@ -215,7 +221,7 @@ export class AutomationService {
     }
 
     const status = failed > 0 ? 'FAILED' : 'SUCCESS';
-    await this.automationRepository.completeRun({
+    await this.automationRepository.completeAutomationRun({
       runId: run.id,
       status,
       notes: `placed=${placed};duplicateSkipped=${duplicateSkipped};rejectedRisk=${rejectedRisk};failed=${failed}`,
@@ -435,21 +441,21 @@ export class AutomationService {
     };
   }
 
-  private toSignalKey(strategy: string, signal: AutomationSignalInput): string {
-    const timestamp = signal.signalAt.toISOString();
-    return `${strategy}|${signal.symbol}|${signal.side}|${timestamp}`;
-  }
-
   private async placeOrderFromSignal(
     signal: AutomationSignalInput,
     userEmail: string,
     accountId?: string,
   ): Promise<PlaceMarketOrderResult> {
-    return this.paperTradingService.placeMarketOrder({
-      symbol: signal.symbol,
-      side: signal.side,
-      quantity: signal.quantity,
-    }, userEmail, accountId);
+    return this.paperTradingService.placeMarketOrder(
+      {
+        symbol: signal.symbol,
+        side: signal.side,
+        quantity: signal.quantity,
+        source: TradeSource.AUTOMATION,
+      },
+      userEmail,
+      accountId,
+    );
   }
 
   private async ensureOwnedAccount(

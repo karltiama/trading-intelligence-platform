@@ -46,6 +46,17 @@ enum PaperOrderStatus {
   CANCELED
 }
 
+enum TradeSource {
+  SIGNAL
+  MANUAL
+  AUTOMATION
+}
+
+enum UniverseType {
+  CORE
+  ON_DEMAND
+}
+
 enum SignalExecutionStatus {
   PENDING
   PLACED
@@ -76,6 +87,8 @@ model Symbol {
   ticker         String          @unique
   name           String?
   isActive       Boolean         @default(true)
+  universeType   UniverseType    @default(ON_DEMAND)
+  lastSeenAt     DateTime?
   assetType      String?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
@@ -158,7 +171,7 @@ model Signal {
   @@index([symbolId, strategyName, signalDate])
 }
 
-model StrategyRun {
+model AutomationRun {
   id               String                  @id @default(cuid())
   userEmail        String                  @default("local-default@paper.local")
   strategy         String
@@ -183,7 +196,7 @@ model AutomationSignalExecution {
   orderId       String?
   createdAt     DateTime              @default(now())
   updatedAt     DateTime              @updatedAt
-  run           StrategyRun           @relation(fields: [runId], references: [id], onDelete: Cascade)
+  run           AutomationRun         @relation(fields: [runId], references: [id], onDelete: Cascade)
   symbol        Symbol                @relation(fields: [symbolId], references: [id], onDelete: Restrict)
   order         PaperOrder?           @relation(fields: [orderId], references: [id], onDelete: SetNull)
 
@@ -215,6 +228,8 @@ model PaperOrder {
   accountId   String
   symbolId    String
   signalId    String?
+  source      TradeSource        @default(MANUAL)
+  note        String?
   side        PaperOrderSide
   type        PaperOrderType   @default(MARKET)
   status      PaperOrderStatus @default(NEW)
@@ -234,6 +249,7 @@ model PaperOrder {
   @@index([symbolId, requestedAt])
   @@index([status, requestedAt])
   @@index([signalId])
+  @@index([source])
 }
 
 model PaperFill {

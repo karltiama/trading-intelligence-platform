@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { PaperOrderSide } from '@prisma/client';
 import { AccountContextService } from '../account-context/account-context.service';
+import { normalizeOrderNote, resolveHttpTradeSource } from './resolve-trade-source';
 import { OrdersService } from './orders.service';
 
 type PlaceOrderBody = {
@@ -17,6 +18,8 @@ type PlaceOrderBody = {
   side?: string;
   quantity?: number;
   signalId?: string;
+  source?: string;
+  note?: string;
 };
 
 @Controller('orders')
@@ -52,13 +55,16 @@ export class OrdersController {
       queryUserEmail,
     });
     const accountId = accountIdRaw?.trim() || undefined;
-    const signalId = body.signalId?.trim() || undefined;
+    const { source, signalId } = resolveHttpTradeSource(body);
+    const note = normalizeOrderNote(body.note);
     return this.ordersService.placeOrder(
       {
         symbol,
         side: sideRaw as PaperOrderSide,
         quantity: body.quantity,
+        source,
         signalId,
+        note,
       },
       principal.userEmail,
       accountId,

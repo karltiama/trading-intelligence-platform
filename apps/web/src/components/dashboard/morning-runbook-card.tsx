@@ -33,7 +33,8 @@ export function MorningRunbookCard() {
             <Link href="/dashboard/orders" className="font-medium text-foreground hover:underline">
               Orders
             </Link>
-            , confirm chart + levels, size, and submit.
+            , use <strong className="text-foreground">From signal</strong> for scanner setups or{" "}
+            <strong className="text-foreground">Manual trade</strong> for discretion — then submit.
           </li>
           <li>Return here to watch cash, equity, and open positions update.</li>
         </ol>

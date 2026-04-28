@@ -69,7 +69,7 @@ export default function SignalsPage(): React.JSX.Element {
   const ordersBySignalId = useMemo(() => {
     const map = new Map<string, OrderListItem[]>();
     for (const order of orders) {
-      if (!order.signalId) continue;
+      if (!order.signalId || order.source !== "SIGNAL") continue;
       const list = map.get(order.signalId) ?? [];
       list.push(order);
       map.set(order.signalId, list);
@@ -119,6 +119,9 @@ export default function SignalsPage(): React.JSX.Element {
         <h1 className="text-xl font-semibold tracking-tight">Signals</h1>
         <p className="text-sm text-muted-foreground">
           Scan tracked symbols for trend pullback setups and review trade context.
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Scanning Core Universe ({scanSummary?.scannedSymbols ?? "..."})
         </p>
       </div>
 

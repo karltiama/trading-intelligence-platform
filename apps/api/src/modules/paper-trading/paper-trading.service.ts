@@ -4,7 +4,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PaperOrderSide, PaperOrderStatus, Prisma } from '@prisma/client';
+import {
+  PaperOrderSide,
+  PaperOrderStatus,
+  Prisma,
+  TradeSource,
+  UniverseType,
+} from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import {
   PaperTradingRepository,
@@ -16,8 +22,10 @@ export type PlaceMarketOrderInput = {
   symbol: string;
   side: PaperOrderSide;
   quantity: number;
-  /** When set, persisted on the paper order after validating symbol alignment. */
+  source: TradeSource;
+  /** Required when source is SIGNAL; ignored for MANUAL and AUTOMATION. */
   signalId?: string;
+  note?: string | null;
 };
 
 export type PlaceMarketOrderResult = {
@@ -30,6 +38,8 @@ export type PlaceMarketOrderResult = {
   fillNotional: number;
   cashBalance: number;
   signalId: string | null;
+  source: TradeSource;
+  note: string | null;
 };
 
 export type PaperOrderListItem = {
@@ -43,6 +53,10 @@ export type PaperOrderListItem = {
   filledAt: string | null;
   canceledAt: string | null;
   signalId: string | null;
+  source: TradeSource;
+  note: string | null;
+  fillPrice: number | null;
+  symbolUniverseType: UniverseType;
 };
 
 export type PaperOrderPage = {
@@ -75,8 +89,11 @@ export class PaperTradingService {
     }
 
     let linkedSignalId: string | null = null;
-    const trimmedSignalId = input.signalId?.trim();
-    if (trimmedSignalId) {
+    if (input.source === TradeSource.SIGNAL) {
+      const trimmedSignalId = input.signalId?.trim();
+      if (!trimmedSignalId) {
+        throw new BadRequestException('signalId is required for SIGNAL orders.');
+      }
       const link = await this.paperTradingRepository.findSignalSymbolLink(trimmedSignalId);
       if (!link) {
         throw new BadRequestException(`Signal not found: ${trimmedSignalId}`);
@@ -85,7 +102,17 @@ export class PaperTradingService {
         throw new BadRequestException('signalId does not match order symbol.');
       }
       linkedSignalId = link.id;
+    } else if (input.source === TradeSource.MANUAL) {
+      if (input.signalId?.trim()) {
+        throw new BadRequestException('signalId is not allowed for MANUAL orders.');
+      }
+    } else if (input.source === TradeSource.AUTOMATION) {
+      if (input.signalId?.trim()) {
+        throw new BadRequestException('signalId is not supported for AUTOMATION orders.');
+      }
     }
+
+    const note = input.note?.trim() ? input.note.trim() : null;
 
     const fillPrice = symbolQuote.latestClose;
     const fillNotional = fillPrice.mul(quantity);
@@ -100,6 +127,8 @@ export class PaperTradingService {
         ticker,
         symbolId: symbolQuote.symbolId,
         signalId: linkedSignalId,
+        source: input.source,
+        note,
         quantity,
         fillPrice,
         fillNotional,
@@ -119,6 +148,8 @@ export class PaperTradingService {
       ticker,
       symbolId: symbolQuote.symbolId,
       signalId: linkedSignalId,
+      source: input.source,
+      note,
       quantity,
       fillPrice,
       fillNotional,
@@ -181,6 +212,10 @@ export class PaperTradingService {
       filledAt: row.filledAt?.toISOString() ?? null,
       canceledAt: row.canceledAt?.toISOString() ?? null,
       signalId: row.signalId,
+      source: row.source,
+      note: row.note,
+      fillPrice: row.fillPrice ? row.fillPrice.toNumber() : null,
+      symbolUniverseType: row.symbolUniverseType,
     }));
   }
 
@@ -216,6 +251,10 @@ export class PaperTradingService {
       filledAt: row.filledAt?.toISOString() ?? null,
       canceledAt: row.canceledAt?.toISOString() ?? null,
       signalId: row.signalId,
+      source: row.source,
+      note: row.note,
+      fillPrice: row.fillPrice ? row.fillPrice.toNumber() : null,
+      symbolUniverseType: row.symbolUniverseType,
     }));
 
     const last = visibleRows[visibleRows.length - 1];
@@ -232,6 +271,8 @@ export class PaperTradingService {
     ticker: string;
     symbolId: string;
     signalId: string | null;
+    source: TradeSource;
+    note: string | null;
     quantity: Prisma.Decimal;
     fillPrice: Prisma.Decimal;
     fillNotional: Prisma.Decimal;
@@ -260,6 +301,8 @@ export class PaperTradingService {
       accountId: params.accountId,
       symbolId: params.symbolId,
       signalId: params.signalId,
+      source: params.source,
+      note: params.note,
       side: 'BUY',
       quantity: params.quantity,
       price: params.fillPrice,
@@ -287,6 +330,8 @@ export class PaperTradingService {
       fillNotional: params.fillNotional.toNumber(),
       cashBalance: nextCashBalance.toNumber(),
       signalId: params.signalId,
+      source: params.source,
+      note: params.note,
     };
   }
 
@@ -295,6 +340,8 @@ export class PaperTradingService {
     ticker: string;
     symbolId: string;
     signalId: string | null;
+    source: TradeSource;
+    note: string | null;
     quantity: Prisma.Decimal;
     fillPrice: Prisma.Decimal;
     fillNotional: Prisma.Decimal;
@@ -322,6 +369,8 @@ export class PaperTradingService {
       accountId: params.accountId,
       symbolId: params.symbolId,
       signalId: params.signalId,
+      source: params.source,
+      note: params.note,
       side: 'SELL',
       quantity: params.quantity,
       price: params.fillPrice,
@@ -349,6 +398,8 @@ export class PaperTradingService {
       fillNotional: params.fillNotional.toNumber(),
       cashBalance: nextCashBalance.toNumber(),
       signalId: params.signalId,
+      source: params.source,
+      note: params.note,
     };
   }
 
@@ -426,6 +477,8 @@ export class PaperTradingService {
         fillNotional: params.order.fillNotional,
         cashBalance: params.order.cashBalance,
         signalId: params.order.signalId,
+        source: params.order.source,
+        note: params.order.note,
       },
     });
   }

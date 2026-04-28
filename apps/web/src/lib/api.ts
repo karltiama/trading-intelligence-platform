@@ -121,6 +121,8 @@ export type PortfolioPosition = {
 
 export type OrderSide = "BUY" | "SELL";
 export type OrderStatus = "NEW" | "FILLED" | "CANCELED";
+export type TradeSource = "SIGNAL" | "MANUAL" | "AUTOMATION";
+export type UniverseType = "CORE" | "ON_DEMAND";
 
 export type OrderListItem = {
   userEmail: string;
@@ -134,13 +136,19 @@ export type OrderListItem = {
   filledAt: string | null;
   canceledAt: string | null;
   signalId: string | null;
+  source: TradeSource;
+  note: string | null;
+  fillPrice: number | null;
+  symbolUniverseType: UniverseType;
 };
 
 export type PlaceOrderBody = {
   symbol: string;
   side: OrderSide;
   quantity: number;
+  source?: TradeSource;
   signalId?: string;
+  note?: string;
 };
 
 export type PlaceOrderResponse = {
@@ -154,6 +162,8 @@ export type PlaceOrderResponse = {
   fillNotional: number;
   cashBalance: number;
   signalId: string | null;
+  source: TradeSource;
+  note: string | null;
 };
 
 export type CancelOrderResponse = {
@@ -328,4 +338,21 @@ export function listSignals(params?: {
 
 export function getSignalById(signalId: string): Promise<SignalItem> {
   return apiGet<SignalItem>(`/signals/${encodeURIComponent(signalId.trim())}`);
+}
+
+export type TrackedSymbolRow = {
+  id: string;
+  ticker: string;
+  name: string | null;
+  isActive: boolean;
+  universeType: UniverseType;
+  lastSeenAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export function addTrackedSymbol(ticker: string): Promise<TrackedSymbolRow> {
+  return apiPost<TrackedSymbolRow, { ticker: string }>("/symbols", {
+    ticker: ticker.trim().toUpperCase(),
+  });
 }

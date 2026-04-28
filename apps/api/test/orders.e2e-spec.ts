@@ -5,11 +5,13 @@ import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
+import { MarketDataService } from '../src/modules/market-data/market-data.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 describe('OrdersController (e2e)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
+  let marketDataService: MarketDataService;
   let ticker: string;
   const userEmail = 'orders-strict@local.test';
 
@@ -20,6 +22,7 @@ describe('OrdersController (e2e)', () => {
 
     app = moduleFixture.createNestApplication();
     prisma = moduleFixture.get(PrismaService);
+    marketDataService = moduleFixture.get(MarketDataService);
     await app.init();
   });
 
@@ -52,6 +55,7 @@ describe('OrdersController (e2e)', () => {
         symbol: ticker,
         side: 'BUY',
         quantity: 2,
+        source: 'MANUAL',
       })
       .expect(201);
 
@@ -60,6 +64,7 @@ describe('OrdersController (e2e)', () => {
     expect(placed.body.userEmail).toBe(userEmail);
     expect(placed.body.fillPrice).toBe(100);
     expect(placed.body.fillNotional).toBe(200);
+    expect(placed.body.source).toBe('MANUAL');
 
     const listed = await request(app.getHttpServer())
       .get('/orders')
@@ -71,6 +76,8 @@ describe('OrdersController (e2e)', () => {
     });
     expect(row).toBeDefined();
     expect(row?.userEmail).toBe(userEmail);
+    expect(row?.source).toBe('MANUAL');
+    expect(row?.fillPrice).toBe(100);
 
     const audit = await prisma.auditEvent.findFirst({
       where: {
@@ -91,6 +98,7 @@ describe('OrdersController (e2e)', () => {
         symbol: ticker,
         side: 'BUY',
         quantity: 1,
+        source: 'MANUAL',
       })
       .expect(201);
 
@@ -107,6 +115,7 @@ describe('OrdersController (e2e)', () => {
         symbol: ticker,
         side: 'BUY',
         quantity: 1,
+        source: 'MANUAL',
       })
       .expect(400);
   });
@@ -119,20 +128,104 @@ describe('OrdersController (e2e)', () => {
         symbol: ticker,
         side: 'BUY',
         quantity: 0,
+        source: 'MANUAL',
       })
       .expect(400);
   });
 
-  it('rejects unknown symbol order', async () => {
+  it('rejects MANUAL order with signalId', async () => {
     await request(app.getHttpServer())
       .post('/orders')
       .set('x-user-email', userEmail)
       .send({
-        symbol: 'UNKNOWN_TICKER',
+        symbol: ticker,
         side: 'BUY',
         quantity: 1,
+        source: 'MANUAL',
+        signalId: 'fake-signal-id',
       })
-      .expect(404);
+      .expect(400);
+  });
+
+  it('creates ON_DEMAND symbol for unknown manual order and succeeds', async () => {
+    const unknownTicker = `NEW${Date.now()}`;
+    const syncSpy = jest
+      .spyOn(marketDataService, 'syncDailyBars')
+      .mockImplementation(async (symbol: string) => {
+        const normalized = symbol.trim().toUpperCase();
+        const created = await prisma.symbol.upsert({
+          where: { ticker: normalized },
+          create: {
+            ticker: normalized,
+            isActive: true,
+            universeType: 'ON_DEMAND',
+            lastSeenAt: new Date(),
+          },
+          update: {
+            lastSeenAt: new Date(),
+          },
+          select: { id: true },
+        });
+        await prisma.dailyPrice.upsert({
+          where: {
+            symbolId_date: {
+              symbolId: created.id,
+              date: new Date('2026-04-25T00:00:00.000Z'),
+            },
+          },
+          create: {
+            symbolId: created.id,
+            date: new Date('2026-04-25T00:00:00.000Z'),
+            open: new Prisma.Decimal(100),
+            high: new Prisma.Decimal(101),
+            low: new Prisma.Decimal(99),
+            close: new Prisma.Decimal(100),
+            volume: new Prisma.Decimal(1000000),
+            source: 'mock-sync',
+          },
+          update: {
+            close: new Prisma.Decimal(100),
+          },
+        });
+        return 1;
+      });
+
+    const placed = await request(app.getHttpServer())
+      .post('/orders')
+      .set('x-user-email', userEmail)
+      .send({
+        symbol: unknownTicker,
+        side: 'BUY',
+        quantity: 1,
+        source: 'MANUAL',
+      })
+      .expect(201);
+
+    expect(placed.body.symbol).toBe(unknownTicker);
+    expect(placed.body.source).toBe('MANUAL');
+
+    const createdSymbol = await prisma.symbol.findUnique({
+      where: { ticker: unknownTicker },
+      select: { universeType: true, lastSeenAt: true },
+    });
+    expect(createdSymbol?.universeType).toBe('ON_DEMAND');
+    expect(createdSymbol?.lastSeenAt).not.toBeNull();
+
+    await prisma.dailyPrice.deleteMany({
+      where: { symbol: { ticker: unknownTicker } },
+    });
+    await prisma.paperFill.deleteMany({
+      where: { symbol: { ticker: unknownTicker } },
+    });
+    await prisma.paperOrder.deleteMany({
+      where: { symbol: { ticker: unknownTicker } },
+    });
+    await prisma.paperPosition.deleteMany({
+      where: { symbol: { ticker: unknownTicker } },
+    });
+    await prisma.symbol.deleteMany({ where: { ticker: unknownTicker } });
+
+    syncSpy.mockRestore();
   });
 
   it('rejects insufficient cash on large buy', async () => {
@@ -143,6 +236,7 @@ describe('OrdersController (e2e)', () => {
         symbol: ticker,
         side: 'BUY',
         quantity: 10_000_000,
+        source: 'MANUAL',
       })
       .expect(409);
   });
@@ -155,8 +249,49 @@ describe('OrdersController (e2e)', () => {
         symbol: ticker,
         side: 'SELL',
         quantity: 1,
+        source: 'MANUAL',
       })
       .expect(409);
+  });
+
+  it('places SIGNAL order when signal matches symbol', async () => {
+    const symbol = await prisma.symbol.findUnique({
+      where: { ticker },
+      select: { id: true },
+    });
+    if (!symbol) {
+      throw new Error('Expected symbol row.');
+    }
+    const signal = await prisma.signal.create({
+      data: {
+        symbolId: symbol.id,
+        strategyName: 'TREND_PULLBACK',
+        status: 'ACTIVE',
+        signalKey: `e2e-${Date.now()}`,
+        signalDate: new Date('2026-04-25T00:00:00.000Z'),
+        reason: 'e2e signal',
+      },
+      select: { id: true },
+    });
+
+    const placed = await request(app.getHttpServer())
+      .post('/orders')
+      .set('x-user-email', userEmail)
+      .send({
+        symbol: ticker,
+        side: 'BUY',
+        quantity: 1,
+        source: 'SIGNAL',
+        signalId: signal.id,
+        note: 'from scanner',
+      })
+      .expect(201);
+
+    expect(placed.body.source).toBe('SIGNAL');
+    expect(placed.body.signalId).toBe(signal.id);
+    expect(placed.body.note).toBe('from scanner');
+
+    await prisma.signal.delete({ where: { id: signal.id } });
   });
 
   it('supports list filters and pagination for account-scoped order history', async () => {
@@ -167,6 +302,7 @@ describe('OrdersController (e2e)', () => {
         symbol: ticker,
         side: 'BUY',
         quantity: 1,
+        source: 'MANUAL',
       })
       .expect(201);
 
@@ -194,6 +330,7 @@ describe('OrdersController (e2e)', () => {
         symbol: ticker,
         side: 'BUY',
         quantity: 1,
+        source: 'MANUAL',
       })
       .expect(201);
 
@@ -240,12 +377,12 @@ describe('OrdersController (e2e)', () => {
     await request(app.getHttpServer())
       .post('/orders')
       .set('x-user-email', userEmail)
-      .send({ symbol: ticker, side: 'BUY', quantity: 1 })
+      .send({ symbol: ticker, side: 'BUY', quantity: 1, source: 'MANUAL' })
       .expect(201);
     await request(app.getHttpServer())
       .post('/orders')
       .set('x-user-email', userEmail)
-      .send({ symbol: ticker, side: 'BUY', quantity: 1 })
+      .send({ symbol: ticker, side: 'BUY', quantity: 1, source: 'MANUAL' })
       .expect(201);
 
     const first = await request(app.getHttpServer())

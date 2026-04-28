@@ -1,12 +1,21 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { PaperOrderSide, PaperOrderStatus } from '@prisma/client';
+import {
+  PaperOrderSide,
+  PaperOrderStatus,
+  TradeSource,
+  UniverseType,
+} from '@prisma/client';
+import { MarketDataRepository } from '../market-data/market-data.repository';
+import { MarketDataService } from '../market-data/market-data.service';
 import { PaperTradingService } from '../paper-trading/paper-trading.service';
 
 export type PlaceOrderInput = {
   symbol: string;
   side: PaperOrderSide;
   quantity: number;
+  source: TradeSource;
   signalId?: string;
+  note?: string | null;
 };
 
 export type AttributedOrder = {
@@ -20,6 +29,8 @@ export type AttributedOrder = {
   fillNotional: number;
   cashBalance: number;
   signalId: string | null;
+  source: TradeSource;
+  note: string | null;
 };
 
 export type AttributedOrderListItem = {
@@ -34,6 +45,10 @@ export type AttributedOrderListItem = {
   filledAt: string | null;
   canceledAt: string | null;
   signalId: string | null;
+  source: TradeSource;
+  note: string | null;
+  fillPrice: number | null;
+  symbolUniverseType: UniverseType;
 };
 
 export type OrdersListQuery = {
@@ -53,22 +68,52 @@ export type OrdersCursorPage = {
 
 @Injectable()
 export class OrdersService {
-  constructor(private readonly paperTradingService: PaperTradingService) {}
+  constructor(
+    private readonly paperTradingService: PaperTradingService,
+    private readonly marketDataService: MarketDataService,
+    private readonly marketDataRepository: MarketDataRepository,
+  ) {}
 
   async placeOrder(
     input: PlaceOrderInput,
     userEmail: string,
     accountId?: string,
   ): Promise<AttributedOrder> {
+    const normalizedSymbol = input.symbol.trim().toUpperCase();
+    const preparedInput: PlaceOrderInput = {
+      ...input,
+      symbol: normalizedSymbol,
+    };
+    if (preparedInput.source === 'MANUAL') {
+      await this.ensureManualSymbolReady(normalizedSymbol);
+    }
     const placed = await this.paperTradingService.placeMarketOrder(
-      input,
+      preparedInput,
       userEmail,
       accountId,
     );
+    if (preparedInput.source === 'MANUAL') {
+      await this.marketDataRepository.touchSymbolLastSeenAt(normalizedSymbol);
+    }
     return {
       userEmail,
       ...placed,
     };
+  }
+
+  private async ensureManualSymbolReady(symbol: string): Promise<void> {
+    const existing = await this.marketDataRepository.findSymbolByTicker(symbol);
+    if (!existing) {
+      await this.marketDataRepository.createTrackedSymbol(
+        symbol,
+        undefined,
+        'ON_DEMAND',
+      );
+    }
+    const bars = await this.marketDataService.getBars(symbol, 1);
+    if (bars.length === 0) {
+      await this.marketDataService.syncDailyBars(symbol, 30);
+    }
   }
 
   async cancelOrder(

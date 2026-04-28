@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { PaperOrderSide, PaperOrderStatus, Prisma } from '@prisma/client';
+import {
+  PaperOrderSide,
+  PaperOrderStatus,
+  Prisma,
+  TradeSource,
+  UniverseType,
+} from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 const DEFAULT_STARTING_CASH = new Prisma.Decimal('100000');
@@ -50,6 +56,10 @@ export type PaperOrderListRow = {
   filledAt: Date | null;
   canceledAt: Date | null;
   signalId: string | null;
+  source: TradeSource;
+  note: string | null;
+  fillPrice: Prisma.Decimal | null;
+  symbolUniverseType: UniverseType;
 };
 
 export type PaperOrderListFilters = {
@@ -292,6 +302,8 @@ export class PaperTradingRepository {
     accountId: string;
     symbolId: string;
     signalId?: string | null;
+    source: TradeSource;
+    note?: string | null;
     side: PaperOrderSide;
     quantity: Prisma.Decimal;
     price: Prisma.Decimal;
@@ -304,6 +316,8 @@ export class PaperTradingRepository {
           accountId: params.accountId,
           symbolId: params.symbolId,
           signalId: params.signalId ?? null,
+          source: params.source,
+          note: params.note ?? null,
           side: params.side,
           type: 'MARKET',
           status: 'FILLED',
@@ -424,6 +438,8 @@ export class PaperTradingRepository {
       select: {
         id: true,
         signalId: true,
+        source: true,
+        note: true,
         side: true,
         type: true,
         status: true,
@@ -431,7 +447,8 @@ export class PaperTradingRepository {
         requestedAt: true,
         filledAt: true,
         canceledAt: true,
-        symbol: { select: { ticker: true } },
+        symbol: { select: { ticker: true, universeType: true } },
+        fill: { select: { price: true } },
       },
     });
 
@@ -446,6 +463,10 @@ export class PaperTradingRepository {
       filledAt: row.filledAt,
       canceledAt: row.canceledAt,
       signalId: row.signalId,
+      source: row.source,
+      note: row.note,
+      fillPrice: row.fill?.price ?? null,
+      symbolUniverseType: row.symbol.universeType,
     }));
   }
 

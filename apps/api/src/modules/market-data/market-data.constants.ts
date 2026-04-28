@@ -1,16 +1,16 @@
+/**
+ * Default universe for bootstrap + full default sync. Adjust here only; callers import this list.
+ */
 export const DEFAULT_SYNC_SYMBOLS = [
   'AAPL',
   'MSFT',
   'SPY',
+  'QQQ',
   'NVDA',
   'META',
-] as const;
-
-export const FUTURE_TRACKED_SYMBOLS = [
-  'QQQ',
-  'TSLA',
   'AMZN',
   'GOOGL',
+  'TSLA',
   'AMD',
 ] as const;
 

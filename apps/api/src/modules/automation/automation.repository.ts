@@ -61,11 +61,11 @@ export type AutomationRunListFilters = {
 export class AutomationRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async createRun(params: {
+  async createAutomationRun(params: {
     strategy: string;
     userEmail: string;
   }): Promise<AutomationRunRow> {
-    return this.prisma.strategyRun.create({
+    return this.prisma.automationRun.create({
       data: {
         strategy: params.strategy,
         userEmail: params.userEmail,
@@ -79,6 +79,13 @@ export class AutomationRepository {
         startedAt: true,
       },
     });
+  }
+
+  async createRun(params: {
+    strategy: string;
+    userEmail: string;
+  }): Promise<AutomationRunRow> {
+    return this.createAutomationRun(params);
   }
 
   async getOrCreateGuardrail(
@@ -185,12 +192,12 @@ export class AutomationRepository {
     });
   }
 
-  async completeRun(params: {
+  async completeAutomationRun(params: {
     runId: string;
     status: RunStatus;
     notes?: string;
   }): Promise<void> {
-    await this.prisma.strategyRun.update({
+    await this.prisma.automationRun.update({
       where: { id: params.runId },
       data: {
         status: params.status,
@@ -200,7 +207,26 @@ export class AutomationRepository {
     });
   }
 
-  async createSignalExecution(params: {
+  async completeRun(params: {
+    runId: string;
+    status: RunStatus;
+    notes?: string;
+  }): Promise<void> {
+    await this.completeAutomationRun(params);
+  }
+
+  async failAutomationRun(params: {
+    runId: string;
+    notes?: string;
+  }): Promise<void> {
+    await this.completeAutomationRun({
+      runId: params.runId,
+      status: 'FAILED',
+      notes: params.notes,
+    });
+  }
+
+  async createSignalExecutionAttempt(params: {
     runId: string;
     signalKey: string;
     symbolId: string;
@@ -222,10 +248,24 @@ export class AutomationRepository {
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2002'
       ) {
+        await this.markSignalExecutionDuplicate({
+          runId: params.runId,
+          signalKey: params.signalKey,
+          reason: 'duplicate signalKey within automation run',
+        });
         return null;
       }
       throw error;
     }
+  }
+
+  async createSignalExecution(params: {
+    runId: string;
+    signalKey: string;
+    symbolId: string;
+    side: PaperOrderSide;
+  }): Promise<{ id: string } | null> {
+    return this.createSignalExecutionAttempt(params);
   }
 
   async markSignalExecutionPlaced(params: {
@@ -237,6 +277,19 @@ export class AutomationRepository {
       data: {
         status: 'PLACED',
         orderId: params.orderId,
+      },
+    });
+  }
+
+  async markSignalExecutionRejected(params: {
+    executionId: string;
+    reason: string;
+  }): Promise<void> {
+    await this.prisma.automationSignalExecution.update({
+      where: { id: params.executionId },
+      data: {
+        status: 'REJECTED_RISK',
+        reason: params.reason,
       },
     });
   }
@@ -258,11 +311,22 @@ export class AutomationRepository {
     executionId: string;
     reason: string;
   }): Promise<void> {
-    await this.prisma.automationSignalExecution.update({
-      where: { id: params.executionId },
+    await this.markSignalExecutionRejected(params);
+  }
+
+  async markSignalExecutionDuplicate(params: {
+    runId: string;
+    signalKey: string;
+    reason?: string;
+  }): Promise<void> {
+    await this.prisma.automationSignalExecution.updateMany({
+      where: {
+        runId: params.runId,
+        signalKey: params.signalKey,
+      },
       data: {
-        status: 'REJECTED_RISK',
-        reason: params.reason,
+        status: 'SKIPPED_DUPLICATE',
+        reason: params.reason ?? 'duplicate signal',
       },
     });
   }
@@ -284,7 +348,7 @@ export class AutomationRepository {
           }
         : undefined;
 
-    return this.prisma.strategyRun.findMany({
+    return this.prisma.automationRun.findMany({
       where: {
         userEmail,
         strategy: filters.strategy,
@@ -310,7 +374,7 @@ export class AutomationRepository {
     runId: string,
     userEmail: string,
   ): Promise<AutomationRunListRow | null> {
-    return this.prisma.strategyRun.findFirst({
+    return this.prisma.automationRun.findFirst({
       where: { id: runId, userEmail },
       select: {
         id: true,

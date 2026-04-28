@@ -7,11 +7,13 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
+import { UniverseType } from '@prisma/client';
 import { SymbolsService } from './symbols.service';
 
 type CreateSymbolBody = {
   ticker?: string;
   name?: string;
+  universeType?: string;
 };
 
 @Controller('symbols')
@@ -31,7 +33,20 @@ export class SymbolsController {
     }
 
     const name = body.name?.trim() || undefined;
-    return this.symbolsService.addSymbol(ticker, name);
+    const universeTypeRaw = body.universeType?.trim().toUpperCase();
+    let universeType: UniverseType | undefined;
+    if (universeTypeRaw) {
+      if (
+        universeTypeRaw !== UniverseType.CORE &&
+        universeTypeRaw !== UniverseType.ON_DEMAND
+      ) {
+        throw new BadRequestException(
+          'universeType must be CORE or ON_DEMAND.',
+        );
+      }
+      universeType = universeTypeRaw as UniverseType;
+    }
+    return this.symbolsService.addSymbol(ticker, name, universeType);
   }
 
   @Post('bootstrap-defaults')

@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { TradeSource } from '@prisma/client';
 import { AutomationRepository } from './automation.repository';
 import {
   AutomationService,
@@ -11,13 +12,13 @@ import { RiskService } from '../risk/risk.service';
 
 describe('AutomationService', () => {
   const automationRepository = {
-    createRun: jest.fn(),
-    completeRun: jest.fn(),
+    createAutomationRun: jest.fn(),
+    completeAutomationRun: jest.fn(),
     getOrCreateGuardrail: jest.fn(),
     touchGuardrailTriggered: jest.fn(),
-    createSignalExecution: jest.fn(),
+    createSignalExecutionAttempt: jest.fn(),
     markSignalExecutionPlaced: jest.fn(),
-    markSignalExecutionRejectedRisk: jest.fn(),
+    markSignalExecutionRejected: jest.fn(),
     markSignalExecutionFailed: jest.fn(),
   } as unknown as AutomationRepository;
 
@@ -47,13 +48,15 @@ describe('AutomationService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    (automationRepository.createRun as jest.Mock).mockResolvedValue({
+    (automationRepository.createAutomationRun as jest.Mock).mockResolvedValue({
       id: 'run-1',
       strategy: 'mean-reversion',
       status: 'RUNNING',
       startedAt: new Date('2026-04-25T00:00:00.000Z'),
     });
-    (automationRepository.completeRun as jest.Mock).mockResolvedValue(undefined);
+    (automationRepository.completeAutomationRun as jest.Mock).mockResolvedValue(
+      undefined,
+    );
     (automationRepository.getOrCreateGuardrail as jest.Mock).mockResolvedValue({
       id: 'guard-1',
       userEmail: 'automation-spec@local.test',
@@ -69,7 +72,7 @@ describe('AutomationService', () => {
     (automationRepository.markSignalExecutionPlaced as jest.Mock).mockResolvedValue(
       undefined,
     );
-    (automationRepository.markSignalExecutionRejectedRisk as jest.Mock).mockResolvedValue(
+    (automationRepository.markSignalExecutionRejected as jest.Mock).mockResolvedValue(
       undefined,
     );
     (automationRepository.markSignalExecutionFailed as jest.Mock).mockResolvedValue(
@@ -106,7 +109,7 @@ describe('AutomationService', () => {
       },
     ];
 
-    (automationRepository.createSignalExecution as jest.Mock)
+    (automationRepository.createSignalExecutionAttempt as jest.Mock)
       .mockResolvedValueOnce({ id: 'exec-1' })
       .mockResolvedValueOnce(null);
 
@@ -119,6 +122,9 @@ describe('AutomationService', () => {
       fillPrice: 100,
       fillNotional: 100,
       cashBalance: 99900,
+      signalId: null,
+      source: TradeSource.AUTOMATION,
+      note: null,
     });
 
     const result = await service.executeRun({
@@ -133,6 +139,16 @@ describe('AutomationService', () => {
     expect(result.failed).toBe(0);
     expect(result.status).toBe('SUCCESS');
     expect(paperTradingService.placeMarketOrder).toHaveBeenCalledTimes(1);
+    expect(paperTradingService.placeMarketOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        symbol: 'AAPL',
+        side: 'BUY',
+        quantity: 1,
+        source: TradeSource.AUTOMATION,
+      }),
+      'automation-spec@local.test',
+      undefined,
+    );
     expect(automationRepository.markSignalExecutionPlaced).toHaveBeenCalledTimes(1);
   });
 
@@ -147,7 +163,7 @@ describe('AutomationService', () => {
       },
     ];
 
-    (automationRepository.createSignalExecution as jest.Mock).mockResolvedValue({
+    (automationRepository.createSignalExecutionAttempt as jest.Mock).mockResolvedValue({
       id: 'exec-1',
     });
     (paperTradingService.placeMarketOrder as jest.Mock).mockRejectedValue(
@@ -165,7 +181,7 @@ describe('AutomationService', () => {
     expect(result.failed).toBe(1);
     expect(result.status).toBe('FAILED');
     expect(automationRepository.markSignalExecutionFailed).toHaveBeenCalledTimes(1);
-    expect(automationRepository.completeRun).toHaveBeenCalledWith(
+    expect(automationRepository.completeAutomationRun).toHaveBeenCalledWith(
       expect.objectContaining({
         runId: 'run-1',
         status: 'FAILED',
@@ -194,7 +210,7 @@ describe('AutomationService', () => {
       },
     ];
 
-    (automationRepository.createSignalExecution as jest.Mock).mockResolvedValue({
+    (automationRepository.createSignalExecutionAttempt as jest.Mock).mockResolvedValue({
       id: 'exec-1',
     });
     (riskService.evaluateOrder as jest.Mock).mockResolvedValue({
@@ -215,7 +231,7 @@ describe('AutomationService', () => {
     expect(result.status).toBe('SUCCESS');
     expect(paperTradingService.placeMarketOrder).not.toHaveBeenCalled();
     expect(
-      automationRepository.markSignalExecutionRejectedRisk,
+      automationRepository.markSignalExecutionRejected,
     ).toHaveBeenCalledTimes(1);
   });
 });

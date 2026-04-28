@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, UniverseType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 export type DailyBarWrite = {
@@ -31,9 +31,12 @@ export type StoredDailyBar = {
 };
 
 export type TrackedSymbol = {
+  id: string;
   ticker: string;
   name: string | null;
   isActive: boolean;
+  universeType: UniverseType;
+  lastSeenAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -51,8 +54,8 @@ export class MarketDataRepository {
       tickers.map((ticker) =>
         this.prisma.symbol.upsert({
           where: { ticker },
-          create: { ticker, isActive: true },
-          update: {},
+          create: { ticker, isActive: true, universeType: 'CORE' },
+          update: { isActive: true, universeType: 'CORE' },
         }),
       ),
     );
@@ -70,9 +73,12 @@ export class MarketDataRepository {
     return this.prisma.symbol.findMany({
       orderBy: { ticker: 'asc' },
       select: {
+        id: true,
         ticker: true,
         name: true,
         isActive: true,
+        universeType: true,
+        lastSeenAt: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -82,6 +88,7 @@ export class MarketDataRepository {
   async createTrackedSymbol(
     ticker: string,
     name?: string,
+    universeType: UniverseType = 'ON_DEMAND',
   ): Promise<TrackedSymbol> {
     return this.prisma.symbol.upsert({
       where: { ticker },
@@ -89,15 +96,22 @@ export class MarketDataRepository {
         ticker,
         name,
         isActive: true,
+        universeType,
+        lastSeenAt: new Date(),
       },
       update: {
         name: name ?? undefined,
         isActive: true,
+        universeType,
+        lastSeenAt: new Date(),
       },
       select: {
+        id: true,
         ticker: true,
         name: true,
         isActive: true,
+        universeType: true,
+        lastSeenAt: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -117,12 +131,41 @@ export class MarketDataRepository {
       where: { ticker },
       data: { isActive: !existing.isActive },
       select: {
+        id: true,
         ticker: true,
         name: true,
         isActive: true,
+        universeType: true,
+        lastSeenAt: true,
         createdAt: true,
         updatedAt: true,
       },
+    });
+  }
+
+  async findSymbolByTicker(
+    ticker: string,
+  ): Promise<{
+    id: string;
+    ticker: string;
+    universeType: UniverseType;
+    lastSeenAt: Date | null;
+  } | null> {
+    return this.prisma.symbol.findUnique({
+      where: { ticker },
+      select: {
+        id: true,
+        ticker: true,
+        universeType: true,
+        lastSeenAt: true,
+      },
+    });
+  }
+
+  async touchSymbolLastSeenAt(ticker: string): Promise<void> {
+    await this.prisma.symbol.update({
+      where: { ticker },
+      data: { lastSeenAt: new Date() },
     });
   }
 
