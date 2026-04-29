@@ -66,23 +66,25 @@ describe('AutomationService', () => {
       lastTriggeredAt: null,
       updatedAt: new Date('2026-04-25T00:00:00.000Z'),
     });
-    (automationRepository.touchGuardrailTriggered as jest.Mock).mockResolvedValue(
-      undefined,
-    );
-    (automationRepository.markSignalExecutionPlaced as jest.Mock).mockResolvedValue(
-      undefined,
-    );
-    (automationRepository.markSignalExecutionRejected as jest.Mock).mockResolvedValue(
-      undefined,
-    );
-    (automationRepository.markSignalExecutionFailed as jest.Mock).mockResolvedValue(
-      undefined,
-    );
+    (
+      automationRepository.touchGuardrailTriggered as jest.Mock
+    ).mockResolvedValue(undefined);
+    (
+      automationRepository.markSignalExecutionPlaced as jest.Mock
+    ).mockResolvedValue(undefined);
+    (
+      automationRepository.markSignalExecutionRejected as jest.Mock
+    ).mockResolvedValue(undefined);
+    (
+      automationRepository.markSignalExecutionFailed as jest.Mock
+    ).mockResolvedValue(undefined);
     (riskService.evaluateOrder as jest.Mock).mockResolvedValue({
       allowed: true,
     });
     (auditService.recordEvent as jest.Mock).mockResolvedValue(undefined);
-    (paperTradingRepository.resolveAccountForUser as jest.Mock).mockResolvedValue({
+    (
+      paperTradingRepository.resolveAccountForUser as jest.Mock
+    ).mockResolvedValue({
       id: 'acct-1',
       startingCash: { toNumber: () => 100000 },
       cashBalance: { toNumber: () => 100000 },
@@ -149,7 +151,9 @@ describe('AutomationService', () => {
       'automation-spec@local.test',
       undefined,
     );
-    expect(automationRepository.markSignalExecutionPlaced).toHaveBeenCalledTimes(1);
+    expect(
+      automationRepository.markSignalExecutionPlaced,
+    ).toHaveBeenCalledTimes(1);
   });
 
   it('marks run failed when order placement fails for a signal', async () => {
@@ -163,7 +167,9 @@ describe('AutomationService', () => {
       },
     ];
 
-    (automationRepository.createSignalExecutionAttempt as jest.Mock).mockResolvedValue({
+    (
+      automationRepository.createSignalExecutionAttempt as jest.Mock
+    ).mockResolvedValue({
       id: 'exec-1',
     });
     (paperTradingService.placeMarketOrder as jest.Mock).mockRejectedValue(
@@ -180,7 +186,9 @@ describe('AutomationService', () => {
     expect(result.rejectedRisk).toBe(0);
     expect(result.failed).toBe(1);
     expect(result.status).toBe('FAILED');
-    expect(automationRepository.markSignalExecutionFailed).toHaveBeenCalledTimes(1);
+    expect(
+      automationRepository.markSignalExecutionFailed,
+    ).toHaveBeenCalledTimes(1);
     expect(automationRepository.completeAutomationRun).toHaveBeenCalledWith(
       expect.objectContaining({
         runId: 'run-1',
@@ -210,7 +218,9 @@ describe('AutomationService', () => {
       },
     ];
 
-    (automationRepository.createSignalExecutionAttempt as jest.Mock).mockResolvedValue({
+    (
+      automationRepository.createSignalExecutionAttempt as jest.Mock
+    ).mockResolvedValue({
       id: 'exec-1',
     });
     (riskService.evaluateOrder as jest.Mock).mockResolvedValue({

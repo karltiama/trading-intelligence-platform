@@ -95,13 +95,13 @@ export class AlpacaClient {
       .slice()
       .reverse()
       .map((bar) => ({
-      symbol: symbol.toUpperCase(),
-      open: bar.o,
-      high: bar.h,
-      low: bar.l,
-      close: bar.c,
-      volume: bar.v,
-      timestamp: bar.t,
+        symbol: symbol.toUpperCase(),
+        open: bar.o,
+        high: bar.h,
+        low: bar.l,
+        close: bar.c,
+        volume: bar.v,
+        timestamp: bar.t,
       }));
   }
 

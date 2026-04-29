@@ -328,7 +328,10 @@ describe('PaperTradingService', () => {
     expect(result.signalId).toBeNull();
     expect(repository.findSignalSymbolLink).not.toHaveBeenCalled();
     expect(repository.createFilledOrder).toHaveBeenCalledWith(
-      expect.objectContaining({ source: TradeSource.AUTOMATION, signalId: null }),
+      expect.objectContaining({
+        source: TradeSource.AUTOMATION,
+        signalId: null,
+      }),
     );
   });
 });

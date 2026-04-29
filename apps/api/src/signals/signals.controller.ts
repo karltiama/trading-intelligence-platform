@@ -1,4 +1,11 @@
-import { BadRequestException, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { SignalStatus, StrategyName } from '@prisma/client';
 import { SignalsService } from './signals.service';
 
@@ -51,6 +58,36 @@ export class SignalsController {
 
     const symbol = symbolRaw?.trim().toUpperCase() || undefined;
     return this.signalsService.list({ status, strategyName, symbol });
+  }
+
+  @Get('scan-history')
+  listScanHistory(
+    @Query('strategyName') strategyNameRaw?: string,
+    @Query('limit') limitRaw?: string,
+  ) {
+    let strategyName: StrategyName | undefined;
+    if (strategyNameRaw) {
+      const normalized = strategyNameRaw.trim().toUpperCase();
+      if (!Object.values(StrategyName).includes(normalized as StrategyName)) {
+        throw new BadRequestException(
+          'strategyName must be TREND_PULLBACK, RELATIVE_STRENGTH_BREAKOUT, or OVERSOLD_BOUNCE.',
+        );
+      }
+      strategyName = normalized as StrategyName;
+    }
+
+    let limit = 20;
+    if (limitRaw) {
+      const parsed = Number(limitRaw);
+      if (!Number.isInteger(parsed) || parsed < 1 || parsed > 100) {
+        throw new BadRequestException(
+          'limit must be an integer between 1 and 100.',
+        );
+      }
+      limit = parsed;
+    }
+
+    return this.signalsService.listScanHistory(strategyName, limit);
   }
 
   @Get(':id')

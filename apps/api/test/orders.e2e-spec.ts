@@ -297,7 +297,9 @@ describe('OrdersController (e2e)', () => {
 
     const owner = await prisma.user.findUnique({
       where: { email: userEmail },
-      select: { paperAccounts: { select: { id: true }, orderBy: { createdAt: 'asc' } } },
+      select: {
+        paperAccounts: { select: { id: true }, orderBy: { createdAt: 'asc' } },
+      },
     });
     if (!owner?.paperAccounts[0]) {
       throw new Error('Expected owner account to exist.');
@@ -338,12 +340,24 @@ describe('OrdersController (e2e)', () => {
     await request(app.getHttpServer())
       .post('/orders')
       .set('x-user-email', userEmail)
-      .send({ symbol: ticker, side: 'BUY', quantity: 1, stopLossPrice: 99, source: 'MANUAL' })
+      .send({
+        symbol: ticker,
+        side: 'BUY',
+        quantity: 1,
+        stopLossPrice: 99,
+        source: 'MANUAL',
+      })
       .expect(201);
     await request(app.getHttpServer())
       .post('/orders')
       .set('x-user-email', userEmail)
-      .send({ symbol: ticker, side: 'BUY', quantity: 1, stopLossPrice: 99, source: 'MANUAL' })
+      .send({
+        symbol: ticker,
+        side: 'BUY',
+        quantity: 1,
+        stopLossPrice: 99,
+        source: 'MANUAL',
+      })
       .expect(201);
 
     const first = await request(app.getHttpServer())

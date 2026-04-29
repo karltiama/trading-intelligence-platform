@@ -44,7 +44,7 @@ export class SymbolsController {
           'universeType must be CORE or ON_DEMAND.',
         );
       }
-      universeType = universeTypeRaw as UniverseType;
+      universeType = universeTypeRaw;
     }
     return this.symbolsService.addSymbol(ticker, name, universeType);
   }

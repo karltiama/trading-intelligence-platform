@@ -8,10 +8,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   addTrackedSymbol,
+  listScanHistory,
   listOrders,
   listSignals,
   scanSignals,
   type OrderListItem,
+  type ScanHistoryItem,
   type ScanSignalsSummary,
   type ScannerResultRow,
   type StrategyName,
@@ -108,6 +110,7 @@ export default function SignalsPage(): React.JSX.Element {
   const [isLoading, setIsLoading] = useState(true);
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scanHistory, setScanHistory] = useState<ScanHistoryItem[]>([]);
   const [watchlistBusyBySymbol, setWatchlistBusyBySymbol] = useState<
     Record<string, boolean>
   >({});
@@ -139,6 +142,14 @@ export default function SignalsPage(): React.JSX.Element {
       void loadSignals();
     });
   }, [loadSignals]);
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      void listScanHistory({ strategyName: selectedStrategy, limit: 10 })
+        .then(setScanHistory)
+        .catch(() => setScanHistory([]));
+    });
+  }, [selectedStrategy]);
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -191,6 +202,13 @@ export default function SignalsPage(): React.JSX.Element {
         setOrders(await listOrders({ limit: 100 }));
       } catch {
         setOrders([]);
+      }
+      try {
+        setScanHistory(
+          await listScanHistory({ strategyName: selectedStrategy, limit: 10 }),
+        );
+      } catch {
+        setScanHistory([]);
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to run signal scan.");
@@ -347,6 +365,46 @@ export default function SignalsPage(): React.JSX.Element {
           </CardContent>
         </Card>
       ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Recent Runs (History)</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {scanHistory.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No scan history yet for this strategy.
+            </p>
+          ) : null}
+          {scanHistory.map((run) => (
+            <div key={run.id} className="rounded-md border p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-medium">{fmtDate(run.createdAt)}</p>
+                <Badge variant="outline">{run.strategyName}</Badge>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-muted-foreground md:grid-cols-5">
+                <p>Scanned: {run.scannedSymbols}</p>
+                <p>Strong: {run.summary.strongCount}</p>
+                <p>Watchlist: {run.summary.watchlistCount}</p>
+                <p>Weak: {run.summary.weakCount}</p>
+                <p>Ignored: {run.summary.ignoreCount}</p>
+              </div>
+              {run.blockerCounts.length > 0 ? (
+                <div className="mt-2">
+                  <p className="text-xs font-medium text-muted-foreground">Top blockers</p>
+                  <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+                    {run.blockerCounts.slice(0, 3).map((item) => (
+                      <li key={`${run.id}-${item.reason}`}>
+                        {item.reason} ({item.count})
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </CardContent>
+      </Card>
 
       {error ? <p className="text-sm text-rose-600">{error}</p> : null}
 

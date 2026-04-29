@@ -152,14 +152,20 @@ export class OrdersService {
       normalized,
       Math.max(effectiveLookback + 10, 60),
     );
-    const bars = await this.marketDataService.getBars(normalized, effectiveLookback + 1);
+    const bars = await this.marketDataService.getBars(
+      normalized,
+      effectiveLookback + 1,
+    );
     if (bars.length < 2) {
       throw new BadRequestException(
         `Not enough market data to suggest stop loss for ${normalized}.`,
       );
     }
     const recent = bars.slice(-effectiveLookback);
-    const swingLow = recent.reduce((min, bar) => Math.min(min, bar.low), recent[0].low);
+    const swingLow = recent.reduce(
+      (min, bar) => Math.min(min, bar.low),
+      recent[0].low,
+    );
     const referencePrice = recent[recent.length - 1].close;
     const rawSuggestedStopLoss = swingLow * (1 - STOP_BUFFER_PERCENT);
     const cappedMinStopLoss =
@@ -215,9 +221,13 @@ export class OrdersService {
       input.takeProfitPrice !== null &&
       !Number.isFinite(input.takeProfitPrice)
     ) {
-      throw new BadRequestException('takeProfitPrice must be a valid number when provided.');
+      throw new BadRequestException(
+        'takeProfitPrice must be a valid number when provided.',
+      );
     }
-    const quote = await this.paperTradingRepository.findSymbolQuote(input.symbol);
+    const quote = await this.paperTradingRepository.findSymbolQuote(
+      input.symbol,
+    );
     if (!quote || !quote.latestClose) {
       throw new BadRequestException(
         `No reference price available for risk validation: ${input.symbol}`,
@@ -228,7 +238,9 @@ export class OrdersService {
       accountId,
     });
     if (!account) {
-      throw new BadRequestException('paper account not found for current user.');
+      throw new BadRequestException(
+        'paper account not found for current user.',
+      );
     }
     const entryPrice = quote.latestClose.toNumber();
     const stopLossPrice = input.stopLossPrice as number;
@@ -330,7 +342,10 @@ export class OrdersService {
     };
   }
 
-  private encodeCursor(cursor: { requestedAt: string; orderId: string }): string {
+  private encodeCursor(cursor: {
+    requestedAt: string;
+    orderId: string;
+  }): string {
     return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
   }
 

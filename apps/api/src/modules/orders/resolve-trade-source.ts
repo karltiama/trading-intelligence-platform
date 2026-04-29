@@ -13,7 +13,9 @@ export function normalizeOrderNote(raw?: string): string | null {
   const t = raw?.trim() ?? '';
   if (!t) return null;
   if (t.length > NOTE_MAX) {
-    throw new BadRequestException(`note must be at most ${NOTE_MAX} characters.`);
+    throw new BadRequestException(
+      `note must be at most ${NOTE_MAX} characters.`,
+    );
   }
   return t;
 }
@@ -30,7 +32,9 @@ export function resolveHttpTradeSource(body: PlaceOrderBodyLike): {
   const signalId = body.signalId?.trim() || undefined;
 
   if (rawSource === 'AUTOMATION') {
-    throw new BadRequestException('source AUTOMATION is not allowed on this endpoint.');
+    throw new BadRequestException(
+      'source AUTOMATION is not allowed on this endpoint.',
+    );
   }
 
   if (rawSource === 'MANUAL') {
@@ -42,7 +46,9 @@ export function resolveHttpTradeSource(body: PlaceOrderBodyLike): {
 
   if (rawSource === 'SIGNAL') {
     if (!signalId) {
-      throw new BadRequestException('signalId is required when source is SIGNAL.');
+      throw new BadRequestException(
+        'signalId is required when source is SIGNAL.',
+      );
     }
     return { source: TradeSource.SIGNAL, signalId };
   }

@@ -51,6 +51,25 @@ type ScanSummary = {
   asOf: string;
 };
 
+type ScanHistoryRow = {
+  id: string;
+  strategyName: StrategyName;
+  scannedSymbols: number;
+  qualifiedSignals: number;
+  upsertedSignals: number;
+  expiredSignals: number;
+  skippedSymbols: number;
+  summary: {
+    totalScanned: number;
+    strongCount: number;
+    watchlistCount: number;
+    weakCount: number;
+    ignoreCount: number;
+  };
+  blockerCounts: Array<{ reason: string; count: number }>;
+  createdAt: string;
+};
+
 type ScannerScanRow = {
   symbol: string;
   grade: 'STRONG' | 'WATCHLIST' | 'WEAK' | 'IGNORE';
@@ -119,12 +138,20 @@ function toPresentation(input: {
     tags.push('Risk Profile Weak');
   }
 
-  const goodComponents = [trend, pullback, stochastic, volume, riskReward].filter(
-    (value) => value >= 15,
-  ).length;
-  const weakComponents = [trend, pullback, stochastic, volume, riskReward].filter(
-    (value) => value === 0,
-  ).length;
+  const goodComponents = [
+    trend,
+    pullback,
+    stochastic,
+    volume,
+    riskReward,
+  ].filter((value) => value >= 15).length;
+  const weakComponents = [
+    trend,
+    pullback,
+    stochastic,
+    volume,
+    riskReward,
+  ].filter((value) => value === 0).length;
 
   const explanation =
     goodComponents >= 4
@@ -202,7 +229,9 @@ export class SignalsService {
         highs,
         lows,
       });
-      const presentation = toPresentation({ components: score.scannerScore.components });
+      const presentation = toPresentation({
+        components: score.scannerScore.components,
+      });
       scannedRows.push({
         totalScore: score.scannerScore.totalScore,
         row: {
@@ -237,12 +266,19 @@ export class SignalsService {
           signalDate,
           confidence: score.confidence,
           entryPrice:
-            score.entryPrice === null ? null : new Prisma.Decimal(score.entryPrice),
-          stopLoss: score.stopLoss === null ? null : new Prisma.Decimal(score.stopLoss),
+            score.entryPrice === null
+              ? null
+              : new Prisma.Decimal(score.entryPrice),
+          stopLoss:
+            score.stopLoss === null ? null : new Prisma.Decimal(score.stopLoss),
           targetPrice:
-            score.targetPrice === null ? null : new Prisma.Decimal(score.targetPrice),
+            score.targetPrice === null
+              ? null
+              : new Prisma.Decimal(score.targetPrice),
           riskReward:
-            score.riskReward === null ? null : new Prisma.Decimal(score.riskReward),
+            score.riskReward === null
+              ? null
+              : new Prisma.Decimal(score.riskReward),
           timeHorizon: score.timeHorizon,
           reason: score.reason,
           expiresAt,
@@ -251,12 +287,19 @@ export class SignalsService {
           status: SignalStatus.ACTIVE,
           confidence: score.confidence,
           entryPrice:
-            score.entryPrice === null ? null : new Prisma.Decimal(score.entryPrice),
-          stopLoss: score.stopLoss === null ? null : new Prisma.Decimal(score.stopLoss),
+            score.entryPrice === null
+              ? null
+              : new Prisma.Decimal(score.entryPrice),
+          stopLoss:
+            score.stopLoss === null ? null : new Prisma.Decimal(score.stopLoss),
           targetPrice:
-            score.targetPrice === null ? null : new Prisma.Decimal(score.targetPrice),
+            score.targetPrice === null
+              ? null
+              : new Prisma.Decimal(score.targetPrice),
           riskReward:
-            score.riskReward === null ? null : new Prisma.Decimal(score.riskReward),
+            score.riskReward === null
+              ? null
+              : new Prisma.Decimal(score.riskReward),
           timeHorizon: score.timeHorizon,
           reason: score.reason,
           expiresAt,
@@ -301,13 +344,31 @@ export class SignalsService {
     });
     const publicRows = scannedRows.map((item) => item.row);
     const matches = publicRows.filter((row) => row.grade === 'STRONG');
-    const gradeWatchlist = publicRows.filter((row) => row.grade === 'WATCHLIST');
-    const watchlist =
-      gradeWatchlist.length > 0
-        ? gradeWatchlist
-        : publicRows.filter((row) => row.grade === 'WEAK').slice(0, 5);
+    const gradeWatchlist = publicRows.filter(
+      (row) => row.grade === 'WATCHLIST',
+    );
+    const watchlist = gradeWatchlist;
     const weakCount = publicRows.filter((row) => row.grade === 'WEAK').length;
-    const ignoreCount = publicRows.filter((row) => row.grade === 'IGNORE').length;
+    const ignoreCount = publicRows.filter(
+      (row) => row.grade === 'IGNORE',
+    ).length;
+    const blockerCounts = this.buildBlockerCounts(publicRows);
+
+    await this.prisma.scannerRun.create({
+      data: {
+        strategyName,
+        scannedSymbols: symbols.length,
+        qualifiedCount: qualifiedSignals,
+        upsertedCount: upsertedSignals,
+        expiredCount: expiredSignals,
+        skippedCount: skippedSymbols,
+        strongCount: matches.length,
+        watchlistCount: watchlist.length,
+        weakCount,
+        ignoreCount,
+        blockerCounts,
+      },
+    });
 
     return {
       strategyName,
@@ -356,6 +417,48 @@ export class SignalsService {
     return rows.map((row) => this.toSignalRow(row));
   }
 
+  async listScanHistory(
+    strategyName?: StrategyName,
+    limit = 20,
+  ): Promise<ScanHistoryRow[]> {
+    const safeLimit = Math.min(Math.max(limit, 1), 100);
+    const rows = await this.prisma.scannerRun.findMany({
+      where: {
+        strategyName,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      take: safeLimit,
+    });
+
+    return rows.map((row) => {
+      const parsedBlockers = this.normalizeBlockerCounts(row.blockerCounts);
+      return {
+        id: row.id,
+        strategyName: row.strategyName,
+        scannedSymbols: row.scannedSymbols,
+        qualifiedSignals: row.qualifiedCount,
+        upsertedSignals: row.upsertedCount,
+        expiredSignals: row.expiredCount,
+        skippedSymbols: row.skippedCount,
+        summary: {
+          totalScanned:
+            row.strongCount +
+            row.watchlistCount +
+            row.weakCount +
+            row.ignoreCount,
+          strongCount: row.strongCount,
+          watchlistCount: row.watchlistCount,
+          weakCount: row.weakCount,
+          ignoreCount: row.ignoreCount,
+        },
+        blockerCounts: parsedBlockers,
+        createdAt: row.createdAt.toISOString(),
+      };
+    });
+  }
+
   async getById(id: string): Promise<SignalRow> {
     const row = await this.prisma.signal.findUnique({
       where: { id },
@@ -384,6 +487,46 @@ export class SignalsService {
       return scoreOversoldBounce;
     }
     return scoreTrendPullback;
+  }
+
+  private buildBlockerCounts(rows: ScannerScanRow[]): Record<string, number> {
+    const counts: Record<string, number> = {};
+    for (const row of rows) {
+      if (row.grade === 'STRONG') {
+        continue;
+      }
+      for (const reason of row.reasons) {
+        const lower = reason.toLowerCase();
+        if (
+          lower.includes('not') ||
+          lower.includes('weak') ||
+          lower.includes('below') ||
+          lower.includes('outside') ||
+          lower.includes('missing') ||
+          lower.includes('too')
+        ) {
+          counts[reason] = (counts[reason] ?? 0) + 1;
+        }
+      }
+    }
+    return counts;
+  }
+
+  private normalizeBlockerCounts(
+    raw: unknown,
+  ): Array<{ reason: string; count: number }> {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return [];
+    }
+
+    return Object.entries(raw as Record<string, unknown>)
+      .map(([reason, count]) => ({
+        reason,
+        count: typeof count === 'number' ? count : 0,
+      }))
+      .filter((item) => item.count > 0)
+      .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason))
+      .slice(0, 5);
   }
 
   private toSignalRow(row: {

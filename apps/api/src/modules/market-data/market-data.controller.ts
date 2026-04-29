@@ -30,7 +30,7 @@ export class MarketDataController {
           : (response as { message?: string | string[] }).message;
       const normalizedMessage = Array.isArray(message)
         ? message.join(', ')
-        : message ?? 'Sync request failed.';
+        : (message ?? 'Sync request failed.');
 
       return new HttpException(
         {

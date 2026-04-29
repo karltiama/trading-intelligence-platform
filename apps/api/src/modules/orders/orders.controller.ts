@@ -10,7 +10,10 @@ import {
 } from '@nestjs/common';
 import { PaperOrderSide } from '@prisma/client';
 import { AccountContextService } from '../account-context/account-context.service';
-import { normalizeOrderNote, resolveHttpTradeSource } from './resolve-trade-source';
+import {
+  normalizeOrderNote,
+  resolveHttpTradeSource,
+} from './resolve-trade-source';
 import { OrdersService } from './orders.service';
 
 type PlaceOrderBody = {
@@ -51,14 +54,21 @@ export class OrdersController {
     if (typeof body.quantity !== 'number') {
       throw new BadRequestException('quantity must be a number.');
     }
-    if (body.stopLossPrice !== undefined && typeof body.stopLossPrice !== 'number') {
-      throw new BadRequestException('stopLossPrice must be a number when provided.');
+    if (
+      body.stopLossPrice !== undefined &&
+      typeof body.stopLossPrice !== 'number'
+    ) {
+      throw new BadRequestException(
+        'stopLossPrice must be a number when provided.',
+      );
     }
     if (
       body.takeProfitPrice !== undefined &&
       typeof body.takeProfitPrice !== 'number'
     ) {
-      throw new BadRequestException('takeProfitPrice must be a number when provided.');
+      throw new BadRequestException(
+        'takeProfitPrice must be a number when provided.',
+      );
     }
 
     const principal = this.accountContextService.resolvePrincipal({
@@ -71,7 +81,7 @@ export class OrdersController {
     return this.ordersService.placeOrder(
       {
         symbol,
-        side: sideRaw as PaperOrderSide,
+        side: sideRaw,
         quantity: body.quantity,
         stopLossPrice: body.stopLossPrice,
         takeProfitPrice: body.takeProfitPrice,
@@ -139,7 +149,9 @@ export class OrdersController {
     if (limitRaw) {
       const parsed = Number.parseInt(limitRaw, 10);
       if (Number.isNaN(parsed) || parsed < 1 || parsed > 100) {
-        throw new BadRequestException('limit must be an integer between 1 and 100.');
+        throw new BadRequestException(
+          'limit must be an integer between 1 and 100.',
+        );
       }
       limit = parsed;
     }
@@ -156,7 +168,11 @@ export class OrdersController {
     let status: 'NEW' | 'FILLED' | 'CANCELED' | undefined;
     if (statusRaw) {
       const normalized = statusRaw.trim().toUpperCase();
-      if (normalized !== 'NEW' && normalized !== 'FILLED' && normalized !== 'CANCELED') {
+      if (
+        normalized !== 'NEW' &&
+        normalized !== 'FILLED' &&
+        normalized !== 'CANCELED'
+      ) {
         throw new BadRequestException(
           'status must be one of NEW, FILLED, or CANCELED.',
         );

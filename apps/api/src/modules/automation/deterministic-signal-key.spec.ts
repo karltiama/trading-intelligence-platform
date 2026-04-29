@@ -16,4 +16,3 @@ describe('buildDeterministicSignalKey', () => {
     expect(a).toBe('trend-pullback|AAPL|BUY|2026-04-28T13:00:00.000Z');
   });
 });
-

@@ -14,9 +14,9 @@ describe('SymbolsService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    (marketDataRepository.getTrackedSymbolByTicker as jest.Mock).mockResolvedValue(
-      null,
-    );
+    (
+      marketDataRepository.getTrackedSymbolByTicker as jest.Mock
+    ).mockResolvedValue(null);
   });
 
   it('defaults new symbols to ON_DEMAND universe', async () => {
@@ -41,7 +41,9 @@ describe('SymbolsService', () => {
   });
 
   it('returns existing symbol and does not create duplicate', async () => {
-    (marketDataRepository.getTrackedSymbolByTicker as jest.Mock).mockResolvedValue({
+    (
+      marketDataRepository.getTrackedSymbolByTicker as jest.Mock
+    ).mockResolvedValue({
       id: 'sym-existing',
       ticker: 'AAPL',
       name: 'Apple Inc.',
@@ -58,4 +60,3 @@ describe('SymbolsService', () => {
     expect(marketDataRepository.createTrackedSymbol).not.toHaveBeenCalled();
   });
 });
-

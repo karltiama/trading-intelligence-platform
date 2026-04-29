@@ -14,16 +14,18 @@ export class SyncApiKeyGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const expectedApiKey =
       process.env.SYNC_API_KEY ??
-      (process.env.NODE_ENV === 'production' ? undefined : DEV_FALLBACK_SYNC_API_KEY);
+      (process.env.NODE_ENV === 'production'
+        ? undefined
+        : DEV_FALLBACK_SYNC_API_KEY);
     if (!expectedApiKey) {
       throw new InternalServerErrorException(
         'SYNC_API_KEY is not configured on the server.',
       );
     }
 
-    const request = context
-      .switchToHttp()
-      .getRequest<{ headers?: Record<string, string | string[] | undefined> }>();
+    const request = context.switchToHttp().getRequest<{
+      headers?: Record<string, string | string[] | undefined>;
+    }>();
     const headerValue = request.headers?.[SYNC_API_KEY_HEADER];
     const providedApiKey = Array.isArray(headerValue)
       ? headerValue[0]

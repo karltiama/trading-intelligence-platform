@@ -27,7 +27,9 @@ export type PortfolioSummary = {
 
 @Injectable()
 export class PortfolioService {
-  constructor(private readonly paperTradingRepository: PaperTradingRepository) {}
+  constructor(
+    private readonly paperTradingRepository: PaperTradingRepository,
+  ) {}
 
   async getPositions(
     userEmail: string,
@@ -44,10 +46,13 @@ export class PortfolioService {
           : 'Paper account not found for current user.',
       );
     }
-    const positions = await this.paperTradingRepository.listPositions(account.id);
-    const latestPrices = await this.paperTradingRepository.findLatestPricesForSymbols(
-      positions.map((p) => p.symbolId),
+    const positions = await this.paperTradingRepository.listPositions(
+      account.id,
     );
+    const latestPrices =
+      await this.paperTradingRepository.findLatestPricesForSymbols(
+        positions.map((p) => p.symbolId),
+      );
 
     return positions.map((position) => {
       const latest = latestPrices[position.symbolId];
@@ -83,7 +88,10 @@ export class PortfolioService {
     });
   }
 
-  async getSummary(userEmail: string, accountId?: string): Promise<PortfolioSummary> {
+  async getSummary(
+    userEmail: string,
+    accountId?: string,
+  ): Promise<PortfolioSummary> {
     const account = await this.paperTradingRepository.resolveAccountForUser({
       userEmail,
       accountId,
@@ -95,10 +103,13 @@ export class PortfolioService {
           : 'Paper account not found for current user.',
       );
     }
-    const positions = await this.paperTradingRepository.listPositions(account.id);
-    const latestPrices = await this.paperTradingRepository.findLatestPricesForSymbols(
-      positions.map((p) => p.symbolId),
+    const positions = await this.paperTradingRepository.listPositions(
+      account.id,
     );
+    const latestPrices =
+      await this.paperTradingRepository.findLatestPricesForSymbols(
+        positions.map((p) => p.symbolId),
+      );
 
     let positionsValue = new Prisma.Decimal(0);
     let unrealizedPnl = new Prisma.Decimal(0);

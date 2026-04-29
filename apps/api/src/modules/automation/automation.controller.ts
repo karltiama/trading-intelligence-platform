@@ -56,7 +56,9 @@ export class AutomationController {
     const signals = signalsRaw.map((signal, index) => {
       const symbolId = signal.symbolId?.trim();
       if (!symbolId) {
-        throw new BadRequestException(`signals[${index}].symbolId is required.`);
+        throw new BadRequestException(
+          `signals[${index}].symbolId is required.`,
+        );
       }
 
       const symbol = signal.symbol?.trim().toUpperCase();
@@ -66,11 +68,17 @@ export class AutomationController {
 
       const sideRaw = signal.side?.trim().toUpperCase();
       if (sideRaw !== 'BUY' && sideRaw !== 'SELL') {
-        throw new BadRequestException(`signals[${index}].side must be BUY or SELL.`);
+        throw new BadRequestException(
+          `signals[${index}].side must be BUY or SELL.`,
+        );
       }
+      const side: PaperOrderSide =
+        sideRaw === 'BUY' ? PaperOrderSide.BUY : PaperOrderSide.SELL;
 
       if (typeof signal.quantity !== 'number') {
-        throw new BadRequestException(`signals[${index}].quantity must be a number.`);
+        throw new BadRequestException(
+          `signals[${index}].quantity must be a number.`,
+        );
       }
 
       const signalAt = signal.signalAt ? new Date(signal.signalAt) : new Date();
@@ -81,7 +89,7 @@ export class AutomationController {
       return {
         symbolId,
         symbol,
-        side: sideRaw as PaperOrderSide,
+        side,
         signalAt,
         quantity: signal.quantity,
       };
@@ -128,10 +136,7 @@ export class AutomationController {
     if (!strategy) {
       throw new BadRequestException('strategy is required.');
     }
-    if (
-      body.enabled === undefined &&
-      body.cooldownSeconds === undefined
-    ) {
+    if (body.enabled === undefined && body.cooldownSeconds === undefined) {
       throw new BadRequestException(
         'at least one of enabled or cooldownSeconds must be provided.',
       );
@@ -169,7 +174,9 @@ export class AutomationController {
     if (limitRaw) {
       const parsed = Number.parseInt(limitRaw, 10);
       if (Number.isNaN(parsed) || parsed < 1 || parsed > 100) {
-        throw new BadRequestException('limit must be an integer between 1 and 100.');
+        throw new BadRequestException(
+          'limit must be an integer between 1 and 100.',
+        );
       }
       limit = parsed;
     }

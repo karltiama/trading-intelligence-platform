@@ -94,7 +94,8 @@ export class PaperTradingRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   async getOrCreateDefaultAccount(): Promise<PaperAccountState> {
-    const defaultUserId = await this.getOrCreateUserIdByEmail(DEFAULT_USER_EMAIL);
+    const defaultUserId =
+      await this.getOrCreateUserIdByEmail(DEFAULT_USER_EMAIL);
     const existing = await this.prisma.paperAccount.findUnique({
       where: { id: DEFAULT_ACCOUNT_ID },
       select: {
@@ -237,7 +238,7 @@ export class PaperTradingRepository {
           displayName:
             email === DEFAULT_USER_EMAIL
               ? DEFAULT_USER_DISPLAY_NAME
-              : email.split('@')[0] ?? 'Paper User',
+              : (email.split('@')[0] ?? 'Paper User'),
         },
         select: { id: true },
       });
@@ -278,7 +279,9 @@ export class PaperTradingRepository {
     };
   }
 
-  async findSignalSymbolLink(signalId: string): Promise<{ id: string; symbolId: string } | null> {
+  async findSignalSymbolLink(
+    signalId: string,
+  ): Promise<{ id: string; symbolId: string } | null> {
     return this.prisma.signal.findUnique({
       where: { id: signalId },
       select: { id: true, symbolId: true },

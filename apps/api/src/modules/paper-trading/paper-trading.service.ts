@@ -86,21 +86,27 @@ export class PaperTradingService {
     const quantity = this.toPositiveQuantity(input.quantity);
 
     const account = await this.resolveScopedAccount(userEmail, accountId);
-    const symbolQuote = await this.paperTradingRepository.findSymbolQuote(ticker);
+    const symbolQuote =
+      await this.paperTradingRepository.findSymbolQuote(ticker);
     if (!symbolQuote) {
       throw new NotFoundException(`Tracked symbol not found: ${ticker}`);
     }
     if (symbolQuote.latestClose === null) {
-      throw new ConflictException(`No latest market price available for ${ticker}`);
+      throw new ConflictException(
+        `No latest market price available for ${ticker}`,
+      );
     }
 
     let linkedSignalId: string | null = null;
     if (input.source === TradeSource.SIGNAL) {
       const trimmedSignalId = input.signalId?.trim();
       if (!trimmedSignalId) {
-        throw new BadRequestException('signalId is required for SIGNAL orders.');
+        throw new BadRequestException(
+          'signalId is required for SIGNAL orders.',
+        );
       }
-      const link = await this.paperTradingRepository.findSignalSymbolLink(trimmedSignalId);
+      const link =
+        await this.paperTradingRepository.findSignalSymbolLink(trimmedSignalId);
       if (!link) {
         throw new BadRequestException(`Signal not found: ${trimmedSignalId}`);
       }
@@ -110,19 +116,27 @@ export class PaperTradingService {
       linkedSignalId = link.id;
     } else if (input.source === TradeSource.MANUAL) {
       if (input.signalId?.trim()) {
-        throw new BadRequestException('signalId is not allowed for MANUAL orders.');
+        throw new BadRequestException(
+          'signalId is not allowed for MANUAL orders.',
+        );
       }
     } else if (input.source === TradeSource.AUTOMATION) {
       if (input.signalId?.trim()) {
-        throw new BadRequestException('signalId is not supported for AUTOMATION orders.');
+        throw new BadRequestException(
+          'signalId is not supported for AUTOMATION orders.',
+        );
       }
     }
 
     const note = input.note?.trim() ? input.note.trim() : null;
     const stopLossPrice =
-      input.stopLossPrice == null ? null : new Prisma.Decimal(input.stopLossPrice);
+      input.stopLossPrice == null
+        ? null
+        : new Prisma.Decimal(input.stopLossPrice);
     const takeProfitPrice =
-      input.takeProfitPrice == null ? null : new Prisma.Decimal(input.takeProfitPrice);
+      input.takeProfitPrice == null
+        ? null
+        : new Prisma.Decimal(input.takeProfitPrice);
 
     const fillPrice = symbolQuote.latestClose;
     const fillNotional = fillPrice.mul(quantity);
@@ -214,7 +228,10 @@ export class PaperTradingService {
     accountId?: string,
   ): Promise<PaperOrderListItem[]> {
     const account = await this.resolveScopedAccount(userEmail, accountId);
-    const rows = await this.paperTradingRepository.listOrders(account.id, filters);
+    const rows = await this.paperTradingRepository.listOrders(
+      account.id,
+      filters,
+    );
     return rows.map((row) => ({
       orderId: row.id,
       symbol: row.symbol,
@@ -229,7 +246,9 @@ export class PaperTradingService {
       source: row.source,
       note: row.note,
       stopLossPrice: row.stopLossPrice ? row.stopLossPrice.toNumber() : null,
-      takeProfitPrice: row.takeProfitPrice ? row.takeProfitPrice.toNumber() : null,
+      takeProfitPrice: row.takeProfitPrice
+        ? row.takeProfitPrice.toNumber()
+        : null,
       fillPrice: row.fillPrice ? row.fillPrice.toNumber() : null,
       symbolUniverseType: row.symbolUniverseType,
     }));
@@ -244,7 +263,10 @@ export class PaperTradingService {
     limit: number;
     cursor?: { requestedAt: Date; orderId: string };
   }): Promise<PaperOrderPage> {
-    const account = await this.resolveScopedAccount(input.userEmail, input.accountId);
+    const account = await this.resolveScopedAccount(
+      input.userEmail,
+      input.accountId,
+    );
     const rows = await this.paperTradingRepository.listOrders(account.id, {
       symbol: input.symbol,
       signalId: input.signalId,
@@ -270,7 +292,9 @@ export class PaperTradingService {
       source: row.source,
       note: row.note,
       stopLossPrice: row.stopLossPrice ? row.stopLossPrice.toNumber() : null,
-      takeProfitPrice: row.takeProfitPrice ? row.takeProfitPrice.toNumber() : null,
+      takeProfitPrice: row.takeProfitPrice
+        ? row.takeProfitPrice.toNumber()
+        : null,
       fillPrice: row.fillPrice ? row.fillPrice.toNumber() : null,
       symbolUniverseType: row.symbolUniverseType,
     }));
@@ -300,7 +324,9 @@ export class PaperTradingService {
     existingPosition: PaperPositionState | null;
   }): Promise<PlaceMarketOrderResult> {
     if (params.cashBalance.lessThan(params.fillNotional)) {
-      throw new ConflictException('Insufficient cash balance for BUY market order.');
+      throw new ConflictException(
+        'Insufficient cash balance for BUY market order.',
+      );
     }
 
     const nextCashBalance = params.cashBalance.sub(params.fillNotional);
@@ -354,7 +380,9 @@ export class PaperTradingService {
       signalId: params.signalId,
       source: params.source,
       note: params.note,
-      stopLossPrice: params.stopLossPrice ? params.stopLossPrice.toNumber() : null,
+      stopLossPrice: params.stopLossPrice
+        ? params.stopLossPrice.toNumber()
+        : null,
       takeProfitPrice: params.takeProfitPrice
         ? params.takeProfitPrice.toNumber()
         : null,
@@ -380,11 +408,15 @@ export class PaperTradingService {
       params.existingPosition === null ||
       params.existingPosition.quantity.lessThan(params.quantity)
     ) {
-      throw new ConflictException('Short selling is disabled for this paper account.');
+      throw new ConflictException(
+        'Short selling is disabled for this paper account.',
+      );
     }
 
     const nextCashBalance = params.cashBalance.add(params.fillNotional);
-    const remainingQuantity = params.existingPosition.quantity.sub(params.quantity);
+    const remainingQuantity = params.existingPosition.quantity.sub(
+      params.quantity,
+    );
     const realizedDelta = params.fillPrice
       .sub(params.existingPosition.averageCost)
       .mul(params.quantity);
@@ -430,7 +462,9 @@ export class PaperTradingService {
       signalId: params.signalId,
       source: params.source,
       note: params.note,
-      stopLossPrice: params.stopLossPrice ? params.stopLossPrice.toNumber() : null,
+      stopLossPrice: params.stopLossPrice
+        ? params.stopLossPrice.toNumber()
+        : null,
       takeProfitPrice: params.takeProfitPrice
         ? params.takeProfitPrice.toNumber()
         : null,

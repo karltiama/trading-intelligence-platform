@@ -16,9 +16,8 @@ export class SymbolsService {
     name?: string,
     universeType: UniverseType = 'ON_DEMAND',
   ) {
-    const existing = await this.marketDataRepository.getTrackedSymbolByTicker(
-      ticker,
-    );
+    const existing =
+      await this.marketDataRepository.getTrackedSymbolByTicker(ticker);
     if (existing) {
       return existing;
     }

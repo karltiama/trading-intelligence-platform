@@ -76,11 +76,15 @@ describe('Signals scanner universe (e2e)', () => {
       .post('/signals/scan')
       .expect(201);
     expect(scanned.body.scannedSymbols).toBeGreaterThanOrEqual(1);
-    expect(scanned.body.scanned.some((row: { symbol: string }) => row.symbol === coreTicker)).toBe(
-      true,
-    );
     expect(
-      scanned.body.scanned.some((row: { symbol: string }) => row.symbol === onDemandTicker),
+      scanned.body.scanned.some(
+        (row: { symbol: string }) => row.symbol === coreTicker,
+      ),
+    ).toBe(true);
+    expect(
+      scanned.body.scanned.some(
+        (row: { symbol: string }) => row.symbol === onDemandTicker,
+      ),
     ).toBe(false);
     expect(scanned.body.summary).toEqual(
       expect.objectContaining({
@@ -181,4 +185,3 @@ function buildValidDailyBars(latestDate: string): Array<{
   bars[bars.length - 1].volume = 950_000;
   return bars;
 }
-

@@ -14,6 +14,10 @@ describe('SignalsService', () => {
         updateMany: jest.fn(),
         findUnique: jest.fn(),
       },
+      scannerRun: {
+        create: jest.fn(),
+        findMany: jest.fn(),
+      },
     } as unknown as PrismaService;
   }
 
@@ -31,7 +35,9 @@ describe('SignalsService', () => {
         dailyPrices: buildValidDailyBars('2026-04-24'),
       },
     ]);
-    findManySignals.mockResolvedValue([{ id: 'signal-1', signalKey: 'AAPL|TREND_PULLBACK|2026-04-24' }]);
+    findManySignals.mockResolvedValue([
+      { id: 'signal-1', signalKey: 'AAPL|TREND_PULLBACK|2026-04-24' },
+    ]);
     updateManySignals.mockResolvedValue({ count: 0 });
 
     const service = new SignalsService(prisma);
@@ -114,7 +120,7 @@ describe('SignalsService', () => {
     );
   });
 
-  it('returns watchlist candidates even when there are zero strong matches', async () => {
+  it('returns zero watchlist entries when there are zero watchlist grades', async () => {
     const prisma = createPrismaMock();
     const findManySymbols = prisma.symbol.findMany as unknown as jest.Mock;
     const findManySignals = prisma.signal.findMany as unknown as jest.Mock;
@@ -136,8 +142,8 @@ describe('SignalsService', () => {
     expect(summary.summary.strongCount).toBe(0);
     expect(summary.matches).toHaveLength(0);
     expect(summary.scanned.length).toBe(2);
-    expect(summary.summary.watchlistCount).toBeGreaterThan(0);
-    expect(summary.watchlist.length).toBeGreaterThan(0);
+    expect(summary.summary.watchlistCount).toBe(0);
+    expect(summary.watchlist.length).toBe(0);
     expect(upsertSignal).not.toHaveBeenCalled();
     expect(summary.scanned.every((row) => row.tags.length > 0)).toBe(true);
   });
@@ -189,7 +195,9 @@ describe('SignalsService', () => {
 
     expect(summary.scanned).toHaveLength(2);
     expect(summary.scanned[0].tags).toEqual(summary.scanned[1].tags);
-    expect(summary.scanned[0].explanation).toEqual(summary.scanned[1].explanation);
+    expect(summary.scanned[0].explanation).toEqual(
+      summary.scanned[1].explanation,
+    );
   });
 });
 

@@ -23,7 +23,9 @@ export type RiskCheckResult =
 
 @Injectable()
 export class RiskService {
-  constructor(private readonly paperTradingRepository: PaperTradingRepository) {}
+  constructor(
+    private readonly paperTradingRepository: PaperTradingRepository,
+  ) {}
 
   async evaluateOrder(input: RiskCheckInput): Promise<RiskCheckResult> {
     const quantity = new Prisma.Decimal(input.quantity);
@@ -42,9 +44,14 @@ export class RiskService {
       accountId: input.accountId,
     });
     if (!account) {
-      return { allowed: false, reason: 'paper account not found for current user' };
+      return {
+        allowed: false,
+        reason: 'paper account not found for current user',
+      };
     }
-    const quote = await this.paperTradingRepository.findSymbolQuote(input.symbol);
+    const quote = await this.paperTradingRepository.findSymbolQuote(
+      input.symbol,
+    );
     if (!quote) {
       return { allowed: false, reason: `symbol not tracked: ${input.symbol}` };
     }

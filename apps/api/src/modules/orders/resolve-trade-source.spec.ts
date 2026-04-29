@@ -1,7 +1,10 @@
 import { BadRequestException } from '@nestjs/common';
 import { TradeSource } from '@prisma/client';
 
-import { normalizeOrderNote, resolveHttpTradeSource } from './resolve-trade-source';
+import {
+  normalizeOrderNote,
+  resolveHttpTradeSource,
+} from './resolve-trade-source';
 
 describe('resolveHttpTradeSource', () => {
   it('defaults to MANUAL when no source and no signalId', () => {
@@ -19,7 +22,9 @@ describe('resolveHttpTradeSource', () => {
   });
 
   it('rejects AUTOMATION from HTTP body', () => {
-    expect(() => resolveHttpTradeSource({ source: 'AUTOMATION' })).toThrow(BadRequestException);
+    expect(() => resolveHttpTradeSource({ source: 'AUTOMATION' })).toThrow(
+      BadRequestException,
+    );
   });
 
   it('rejects MANUAL with signalId', () => {
@@ -29,7 +34,9 @@ describe('resolveHttpTradeSource', () => {
   });
 
   it('requires signalId when source is SIGNAL', () => {
-    expect(() => resolveHttpTradeSource({ source: 'SIGNAL' })).toThrow(BadRequestException);
+    expect(() => resolveHttpTradeSource({ source: 'SIGNAL' })).toThrow(
+      BadRequestException,
+    );
   });
 });
 
@@ -39,6 +46,8 @@ describe('normalizeOrderNote', () => {
   });
 
   it('rejects notes over 500 chars', () => {
-    expect(() => normalizeOrderNote('a'.repeat(501))).toThrow(BadRequestException);
+    expect(() => normalizeOrderNote('a'.repeat(501))).toThrow(
+      BadRequestException,
+    );
   });
 });

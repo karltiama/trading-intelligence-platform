@@ -271,6 +271,28 @@ export type ScanSignalsSummary = {
   asOf: string;
 };
 
+export type ScanHistoryItem = {
+  id: string;
+  strategyName: StrategyName;
+  scannedSymbols: number;
+  qualifiedSignals: number;
+  upsertedSignals: number;
+  expiredSignals: number;
+  skippedSymbols: number;
+  summary: {
+    totalScanned: number;
+    strongCount: number;
+    watchlistCount: number;
+    weakCount: number;
+    ignoreCount: number;
+  };
+  blockerCounts: Array<{
+    reason: string;
+    count: number;
+  }>;
+  createdAt: string;
+};
+
 export type ScannerResultRow = {
   symbol: string;
   grade: "STRONG" | "WATCHLIST" | "WEAK" | "IGNORE";
@@ -372,6 +394,17 @@ export function scanSignals(
 ): Promise<ScanSignalsSummary> {
   const query = new URLSearchParams({ strategyName });
   return apiPost<ScanSignalsSummary>(`/signals/scan?${query.toString()}`);
+}
+
+export function listScanHistory(params?: {
+  strategyName?: StrategyName;
+  limit?: number;
+}): Promise<ScanHistoryItem[]> {
+  const query = new URLSearchParams();
+  if (params?.strategyName) query.set("strategyName", params.strategyName);
+  if (params?.limit != null) query.set("limit", String(params.limit));
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return apiGet<ScanHistoryItem[]>(`/signals/scan-history${suffix}`);
 }
 
 export function listSignals(params?: {

@@ -155,12 +155,13 @@ export class AutomationService {
         signalAt: signal.signalAt,
       });
 
-      const execution = await this.automationRepository.createSignalExecutionAttempt({
-        runId: run.id,
-        signalKey,
-        symbolId: signal.symbolId,
-        side: signal.side,
-      });
+      const execution =
+        await this.automationRepository.createSignalExecutionAttempt({
+          runId: run.id,
+          signalKey,
+          symbolId: signal.symbolId,
+          side: signal.side,
+        });
 
       if (!execution) {
         duplicateSkipped += 1;
@@ -337,7 +338,8 @@ export class AutomationService {
       throw new NotFoundException(`Automation run not found: ${runId}`);
     }
 
-    const signals = await this.automationRepository.listRunSignalExecutions(runId);
+    const signals =
+      await this.automationRepository.listRunSignalExecutions(runId);
     const summary = {
       totalSignals: signals.length,
       placed: signals.filter((s) => s.status === 'PLACED').length,
@@ -498,7 +500,10 @@ export class AutomationService {
     }
   }
 
-  private encodeRunsCursor(input: { startedAt: string; runId: string }): string {
+  private encodeRunsCursor(input: {
+    startedAt: string;
+    runId: string;
+  }): string {
     return Buffer.from(JSON.stringify(input), 'utf8').toString('base64url');
   }
 

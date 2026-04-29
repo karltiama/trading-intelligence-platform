@@ -49,8 +49,12 @@ export function calculateRelativeVolume(
     return null;
   }
   const latestVolume = volumes[volumes.length - 1];
-  const baselineSlice = volumes.slice(volumes.length - (period + 1), volumes.length - 1);
-  const baseline = baselineSlice.reduce((acc, value) => acc + value, 0) / period;
+  const baselineSlice = volumes.slice(
+    volumes.length - (period + 1),
+    volumes.length - 1,
+  );
+  const baseline =
+    baselineSlice.reduce((acc, value) => acc + value, 0) / period;
   if (baseline <= 0) {
     return null;
   }
@@ -103,7 +107,9 @@ function emptyScannerScore(): ScannerScore {
   };
 }
 
-export function scoreTrendPullback(input: TrendPullbackInput): TrendPullbackScore {
+export function scoreTrendPullback(
+  input: TrendPullbackInput,
+): TrendPullbackScore {
   const { closes, volumes, highs, lows } = input;
   const reasons: string[] = [];
   if (
@@ -227,7 +233,11 @@ export function scoreTrendPullback(input: TrendPullbackInput): TrendPullbackScor
 
   const totalScore = Math.min(
     100,
-    trendScore + pullbackScore + stochasticScore + volumeScore + riskRewardScore,
+    trendScore +
+      pullbackScore +
+      stochasticScore +
+      volumeScore +
+      riskRewardScore,
   );
   const scannerScore: ScannerScore = {
     totalScore,
@@ -263,7 +273,12 @@ export function scoreRelativeStrengthBreakout(
   input: TrendPullbackInput,
 ): TrendPullbackScore {
   const { closes, volumes, highs, lows } = input;
-  if (closes.length < 200 || volumes.length < 30 || highs.length < 30 || lows.length < 30) {
+  if (
+    closes.length < 200 ||
+    volumes.length < 30 ||
+    highs.length < 30 ||
+    lows.length < 30
+  ) {
     return {
       isValid: false,
       confidence: 0,
@@ -271,7 +286,8 @@ export function scoreRelativeStrengthBreakout(
       stopLoss: null,
       targetPrice: null,
       riskReward: null,
-      reason: 'Insufficient historical data for relative strength breakout scan.',
+      reason:
+        'Insufficient historical data for relative strength breakout scan.',
       reasons: ['Need at least 200 closes and 30 volumes.'],
       scannerScore: emptyScannerScore(),
       timeHorizon: '3-10 trading days',
@@ -291,7 +307,8 @@ export function scoreRelativeStrengthBreakout(
       stopLoss: null,
       targetPrice: null,
       riskReward: null,
-      reason: 'Could not compute indicators for relative strength breakout scan.',
+      reason:
+        'Could not compute indicators for relative strength breakout scan.',
       reasons: ['Missing indicator values after validation.'],
       scannerScore: emptyScannerScore(),
       timeHorizon: '3-10 trading days',
@@ -300,7 +317,8 @@ export function scoreRelativeStrengthBreakout(
 
   const reasons: string[] = [];
   const recent20High = Math.max(...highs.slice(highs.length - 20));
-  const breakoutDistance = recent20High > 0 ? (recent20High - latestClose) / recent20High : 1;
+  const breakoutDistance =
+    recent20High > 0 ? (recent20High - latestClose) / recent20High : 1;
   const lookback20 = closes.slice(closes.length - 20);
   const lookback60 = closes.slice(closes.length - 60);
   const ret20 = (latestClose - lookback20[0]) / lookback20[0];
@@ -314,7 +332,9 @@ export function scoreRelativeStrengthBreakout(
 
   if (latestClose > sma50 && latestClose > sma200) {
     trendScore = 20;
-    reasons.push('Price is above 50/200 SMA: breakout trend context is healthy.');
+    reasons.push(
+      'Price is above 50/200 SMA: breakout trend context is healthy.',
+    );
   } else {
     reasons.push('Trend context is weak for breakout continuation.');
   }
@@ -366,7 +386,11 @@ export function scoreRelativeStrengthBreakout(
 
   const totalScore = Math.min(
     100,
-    trendScore + pullbackScore + stochasticScore + volumeScore + riskRewardScore,
+    trendScore +
+      pullbackScore +
+      stochasticScore +
+      volumeScore +
+      riskRewardScore,
   );
   const scannerScore: ScannerScore = {
     totalScore,
@@ -398,9 +422,16 @@ export function scoreRelativeStrengthBreakout(
   };
 }
 
-export function scoreOversoldBounce(input: TrendPullbackInput): TrendPullbackScore {
+export function scoreOversoldBounce(
+  input: TrendPullbackInput,
+): TrendPullbackScore {
   const { closes, volumes, highs, lows } = input;
-  if (closes.length < 200 || volumes.length < 30 || highs.length < 30 || lows.length < 30) {
+  if (
+    closes.length < 200 ||
+    volumes.length < 30 ||
+    highs.length < 30 ||
+    lows.length < 30
+  ) {
     return {
       isValid: false,
       confidence: 0,
@@ -421,7 +452,12 @@ export function scoreOversoldBounce(input: TrendPullbackInput): TrendPullbackSco
   const sma50 = calculateSma(closes, 50);
   const stochasticK = calculateStochasticK(closes, highs, lows, 14);
   const relativeVolume = calculateRelativeVolume(volumes, 20);
-  if (sma20 === null || sma50 === null || stochasticK === null || relativeVolume === null) {
+  if (
+    sma20 === null ||
+    sma50 === null ||
+    stochasticK === null ||
+    relativeVolume === null
+  ) {
     return {
       isValid: false,
       confidence: 0,
@@ -445,7 +481,9 @@ export function scoreOversoldBounce(input: TrendPullbackInput): TrendPullbackSco
 
   if (latestClose >= sma50 * 0.95) {
     trendScore = 15;
-    reasons.push('Higher timeframe structure is stable enough for bounce attempt.');
+    reasons.push(
+      'Higher timeframe structure is stable enough for bounce attempt.',
+    );
   } else {
     reasons.push('Higher timeframe trend is too weak for a reliable bounce.');
   }
@@ -498,7 +536,11 @@ export function scoreOversoldBounce(input: TrendPullbackInput): TrendPullbackSco
 
   const totalScore = Math.min(
     100,
-    trendScore + pullbackScore + stochasticScore + volumeScore + riskRewardScore,
+    trendScore +
+      pullbackScore +
+      stochasticScore +
+      volumeScore +
+      riskRewardScore,
   );
   const scannerScore: ScannerScore = {
     totalScore,

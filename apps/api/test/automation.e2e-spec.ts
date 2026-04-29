@@ -96,7 +96,9 @@ describe('AutomationController (e2e)', () => {
     expect(
       list.body.some((row: { runId: string }) => row.runId === runId),
     ).toBe(true);
-    const listRow = list.body.find((row: { runId: string }) => row.runId === runId);
+    const listRow = list.body.find(
+      (row: { runId: string }) => row.runId === runId,
+    );
     expect(listRow?.userEmail).toBe(userEmail);
 
     const details = await request(app.getHttpServer())
@@ -242,13 +244,15 @@ describe('AutomationController (e2e)', () => {
     const runId = triggered.body.runId as string;
 
     const filtered = await request(app.getHttpServer())
-      .get('/automation/runs?strategy=filterable-strategy&status=SUCCESS&limit=1&offset=0')
+      .get(
+        '/automation/runs?strategy=filterable-strategy&status=SUCCESS&limit=1&offset=0',
+      )
       .set('x-user-email', userEmail)
       .expect(200);
     expect(Array.isArray(filtered.body)).toBe(true);
-    expect(filtered.body.some((row: { runId: string }) => row.runId === runId)).toBe(
-      true,
-    );
+    expect(
+      filtered.body.some((row: { runId: string }) => row.runId === runId),
+    ).toBe(true);
 
     await request(app.getHttpServer())
       .get('/automation/runs?offset=-1')

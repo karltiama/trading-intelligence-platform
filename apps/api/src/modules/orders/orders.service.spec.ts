@@ -62,14 +62,18 @@ describe('OrdersService', () => {
       ticker: 'AAPL',
       latestClose: { toNumber: () => 100 },
     });
-    (paperTradingRepository.resolveAccountForUser as jest.Mock).mockResolvedValue({
+    (
+      paperTradingRepository.resolveAccountForUser as jest.Mock
+    ).mockResolvedValue({
       id: 'acct-1',
       cashBalance: { toNumber: () => 100000 },
     });
   });
 
   it('rejects unknown ticker for manual order', async () => {
-    (marketDataRepository.findSymbolByTicker as jest.Mock).mockResolvedValue(null);
+    (marketDataRepository.findSymbolByTicker as jest.Mock).mockResolvedValue(
+      null,
+    );
 
     await expect(
       service.placeOrder(
@@ -112,7 +116,9 @@ describe('OrdersService', () => {
       ticker: 'AAPL',
       isActive: true,
     });
-    (paperTradingRepository.resolveAccountForUser as jest.Mock).mockResolvedValue({
+    (
+      paperTradingRepository.resolveAccountForUser as jest.Mock
+    ).mockResolvedValue({
       id: 'acct-1',
       cashBalance: { toNumber: () => 1000 },
     });
@@ -181,4 +187,3 @@ describe('OrdersService', () => {
     expect(suggestion.suggestedStopLoss).toBeCloseTo(321.7976, 4);
   });
 });
-

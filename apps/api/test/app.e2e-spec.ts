@@ -50,9 +50,7 @@ describe('AppController (e2e)', () => {
     if (symbols.length > 0) {
       const first = symbols[0];
       expect(typeof first.ticker).toBe('string');
-      expect(
-        first.name === null || typeof first.name === 'string',
-      ).toBe(true);
+      expect(first.name === null || typeof first.name === 'string').toBe(true);
       expect(typeof first.isActive).toBe('boolean');
       expect(typeof first.createdAt).toBe('string');
       expect(typeof first.updatedAt).toBe('string');

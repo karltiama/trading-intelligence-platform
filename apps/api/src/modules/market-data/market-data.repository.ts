@@ -143,9 +143,7 @@ export class MarketDataRepository {
     });
   }
 
-  async findSymbolByTicker(
-    ticker: string,
-  ): Promise<{
+  async findSymbolByTicker(ticker: string): Promise<{
     id: string;
     ticker: string;
     isActive: boolean;
@@ -171,7 +169,9 @@ export class MarketDataRepository {
     });
   }
 
-  async getTrackedSymbolByTicker(ticker: string): Promise<TrackedSymbol | null> {
+  async getTrackedSymbolByTicker(
+    ticker: string,
+  ): Promise<TrackedSymbol | null> {
     return this.prisma.symbol.findUnique({
       where: { ticker },
       select: {

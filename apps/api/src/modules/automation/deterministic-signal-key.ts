@@ -8,4 +8,3 @@ export function buildDeterministicSignalKey(input: {
 }): string {
   return `${input.strategy}|${input.symbol}|${input.side}|${input.signalAt.toISOString()}`;
 }
-
