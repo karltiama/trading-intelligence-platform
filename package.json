@@ -24,5 +24,8 @@
     "db:generate": "npm run prisma:generate --workspace api",
     "db:migrate": "npm run prisma:migrate:init --workspace api",
     "db:studio": "npm run prisma:studio --workspace api"
+  },
+  "dependencies": {
+    "@nestjs/platform-express": "^11.1.19"
   }
 }

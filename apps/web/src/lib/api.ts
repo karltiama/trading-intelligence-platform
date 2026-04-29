@@ -146,6 +146,8 @@ export type PlaceOrderBody = {
   symbol: string;
   side: OrderSide;
   quantity: number;
+  stopLossPrice?: number;
+  takeProfitPrice?: number;
   source?: TradeSource;
   signalId?: string;
   note?: string;
@@ -164,6 +166,20 @@ export type PlaceOrderResponse = {
   signalId: string | null;
   source: TradeSource;
   note: string | null;
+  stopLossPrice: number | null;
+  takeProfitPrice: number | null;
+  riskPerShare: number | null;
+  totalRisk: number | null;
+  riskPercent: number | null;
+  riskRewardRatio: number | null;
+};
+
+export type StopLossSuggestion = {
+  symbol: string;
+  lookback: number;
+  swingLow: number;
+  suggestedStopLoss: number;
+  referencePrice: number;
 };
 
 export type CancelOrderResponse = {
@@ -327,6 +343,17 @@ export function listOrders(params?: {
 
 export function placeOrder(body: PlaceOrderBody): Promise<PlaceOrderResponse> {
   return apiPost<PlaceOrderResponse, PlaceOrderBody>("/orders", body);
+}
+
+export function getStopLossSuggestion(
+  symbol: string,
+  lookback = 20,
+): Promise<StopLossSuggestion> {
+  return apiGet<StopLossSuggestion>(
+    `/orders/stop-suggestion?symbol=${encodeURIComponent(
+      symbol.trim().toUpperCase(),
+    )}&lookback=${lookback}`,
+  );
 }
 
 export function cancelOrder(orderId: string): Promise<CancelOrderResponse> {

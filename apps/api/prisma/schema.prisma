@@ -234,6 +234,8 @@ model PaperOrder {
   type        PaperOrderType   @default(MARKET)
   status      PaperOrderStatus @default(NEW)
   quantity    Decimal          @db.Decimal(18, 8)
+  stopLossPrice Decimal?       @db.Decimal(18, 8)
+  takeProfitPrice Decimal?     @db.Decimal(18, 8)
   requestedAt DateTime         @default(now())
   filledAt    DateTime?
   canceledAt  DateTime?

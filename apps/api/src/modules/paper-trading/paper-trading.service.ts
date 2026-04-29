@@ -23,6 +23,8 @@ export type PlaceMarketOrderInput = {
   side: PaperOrderSide;
   quantity: number;
   source: TradeSource;
+  stopLossPrice?: number;
+  takeProfitPrice?: number;
   /** Required when source is SIGNAL; ignored for MANUAL and AUTOMATION. */
   signalId?: string;
   note?: string | null;
@@ -40,6 +42,8 @@ export type PlaceMarketOrderResult = {
   signalId: string | null;
   source: TradeSource;
   note: string | null;
+  stopLossPrice: number | null;
+  takeProfitPrice: number | null;
 };
 
 export type PaperOrderListItem = {
@@ -55,6 +59,8 @@ export type PaperOrderListItem = {
   signalId: string | null;
   source: TradeSource;
   note: string | null;
+  stopLossPrice: number | null;
+  takeProfitPrice: number | null;
   fillPrice: number | null;
   symbolUniverseType: UniverseType;
 };
@@ -113,6 +119,10 @@ export class PaperTradingService {
     }
 
     const note = input.note?.trim() ? input.note.trim() : null;
+    const stopLossPrice =
+      input.stopLossPrice == null ? null : new Prisma.Decimal(input.stopLossPrice);
+    const takeProfitPrice =
+      input.takeProfitPrice == null ? null : new Prisma.Decimal(input.takeProfitPrice);
 
     const fillPrice = symbolQuote.latestClose;
     const fillNotional = fillPrice.mul(quantity);
@@ -129,6 +139,8 @@ export class PaperTradingService {
         signalId: linkedSignalId,
         source: input.source,
         note,
+        stopLossPrice,
+        takeProfitPrice,
         quantity,
         fillPrice,
         fillNotional,
@@ -150,6 +162,8 @@ export class PaperTradingService {
       signalId: linkedSignalId,
       source: input.source,
       note,
+      stopLossPrice,
+      takeProfitPrice,
       quantity,
       fillPrice,
       fillNotional,
@@ -214,6 +228,8 @@ export class PaperTradingService {
       signalId: row.signalId,
       source: row.source,
       note: row.note,
+      stopLossPrice: row.stopLossPrice ? row.stopLossPrice.toNumber() : null,
+      takeProfitPrice: row.takeProfitPrice ? row.takeProfitPrice.toNumber() : null,
       fillPrice: row.fillPrice ? row.fillPrice.toNumber() : null,
       symbolUniverseType: row.symbolUniverseType,
     }));
@@ -253,6 +269,8 @@ export class PaperTradingService {
       signalId: row.signalId,
       source: row.source,
       note: row.note,
+      stopLossPrice: row.stopLossPrice ? row.stopLossPrice.toNumber() : null,
+      takeProfitPrice: row.takeProfitPrice ? row.takeProfitPrice.toNumber() : null,
       fillPrice: row.fillPrice ? row.fillPrice.toNumber() : null,
       symbolUniverseType: row.symbolUniverseType,
     }));
@@ -273,6 +291,8 @@ export class PaperTradingService {
     signalId: string | null;
     source: TradeSource;
     note: string | null;
+    stopLossPrice: Prisma.Decimal | null;
+    takeProfitPrice: Prisma.Decimal | null;
     quantity: Prisma.Decimal;
     fillPrice: Prisma.Decimal;
     fillNotional: Prisma.Decimal;
@@ -303,6 +323,8 @@ export class PaperTradingService {
       signalId: params.signalId,
       source: params.source,
       note: params.note,
+      stopLossPrice: params.stopLossPrice,
+      takeProfitPrice: params.takeProfitPrice,
       side: 'BUY',
       quantity: params.quantity,
       price: params.fillPrice,
@@ -332,6 +354,10 @@ export class PaperTradingService {
       signalId: params.signalId,
       source: params.source,
       note: params.note,
+      stopLossPrice: params.stopLossPrice ? params.stopLossPrice.toNumber() : null,
+      takeProfitPrice: params.takeProfitPrice
+        ? params.takeProfitPrice.toNumber()
+        : null,
     };
   }
 
@@ -342,6 +368,8 @@ export class PaperTradingService {
     signalId: string | null;
     source: TradeSource;
     note: string | null;
+    stopLossPrice: Prisma.Decimal | null;
+    takeProfitPrice: Prisma.Decimal | null;
     quantity: Prisma.Decimal;
     fillPrice: Prisma.Decimal;
     fillNotional: Prisma.Decimal;
@@ -371,6 +399,8 @@ export class PaperTradingService {
       signalId: params.signalId,
       source: params.source,
       note: params.note,
+      stopLossPrice: params.stopLossPrice,
+      takeProfitPrice: params.takeProfitPrice,
       side: 'SELL',
       quantity: params.quantity,
       price: params.fillPrice,
@@ -400,6 +430,10 @@ export class PaperTradingService {
       signalId: params.signalId,
       source: params.source,
       note: params.note,
+      stopLossPrice: params.stopLossPrice ? params.stopLossPrice.toNumber() : null,
+      takeProfitPrice: params.takeProfitPrice
+        ? params.takeProfitPrice.toNumber()
+        : null,
     };
   }
 
@@ -479,6 +513,8 @@ export class PaperTradingService {
         signalId: params.order.signalId,
         source: params.order.source,
         note: params.order.note,
+        stopLossPrice: params.order.stopLossPrice,
+        takeProfitPrice: params.order.takeProfitPrice,
       },
     });
   }

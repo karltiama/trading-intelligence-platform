@@ -55,6 +55,8 @@ describe('OrdersController (e2e)', () => {
         symbol: ticker,
         side: 'BUY',
         quantity: 2,
+        stopLossPrice: 99,
+        takeProfitPrice: 104,
         source: 'MANUAL',
       })
       .expect(201);
@@ -64,6 +66,12 @@ describe('OrdersController (e2e)', () => {
     expect(placed.body.userEmail).toBe(userEmail);
     expect(placed.body.fillPrice).toBe(100);
     expect(placed.body.fillNotional).toBe(200);
+    expect(placed.body.stopLossPrice).toBe(99);
+    expect(placed.body.takeProfitPrice).toBe(104);
+    expect(placed.body.riskPerShare).toBe(1);
+    expect(placed.body.totalRisk).toBe(2);
+    expect(placed.body.riskPercent).toBeGreaterThan(0);
+    expect(placed.body.riskRewardRatio).toBe(4);
     expect(placed.body.source).toBe('MANUAL');
 
     const listed = await request(app.getHttpServer())
@@ -98,6 +106,7 @@ describe('OrdersController (e2e)', () => {
         symbol: ticker,
         side: 'BUY',
         quantity: 1,
+        stopLossPrice: 99,
         source: 'MANUAL',
       })
       .expect(201);
@@ -111,6 +120,19 @@ describe('OrdersController (e2e)', () => {
   it('rejects requests without user context', async () => {
     await request(app.getHttpServer())
       .post('/orders')
+      .send({
+        symbol: ticker,
+        side: 'BUY',
+        quantity: 1,
+        source: 'MANUAL',
+      })
+      .expect(400);
+  });
+
+  it('rejects BUY without stop loss', async () => {
+    await request(app.getHttpServer())
+      .post('/orders')
+      .set('x-user-email', userEmail)
       .send({
         symbol: ticker,
         side: 'BUY',
@@ -163,17 +185,18 @@ describe('OrdersController (e2e)', () => {
     expect(String(placed.body.message)).toContain('not tracked');
   });
 
-  it('rejects insufficient cash on large buy', async () => {
+  it('blocks high-risk buy trade above max risk percent', async () => {
     await request(app.getHttpServer())
       .post('/orders')
       .set('x-user-email', userEmail)
       .send({
         symbol: ticker,
         side: 'BUY',
-        quantity: 10_000_000,
+        quantity: 5000,
+        stopLossPrice: 99,
         source: 'MANUAL',
       })
-      .expect(409);
+      .expect(400);
   });
 
   it('rejects short sell when position is not held', async () => {
@@ -216,6 +239,7 @@ describe('OrdersController (e2e)', () => {
         symbol: ticker,
         side: 'BUY',
         quantity: 1,
+        stopLossPrice: 99,
         source: 'SIGNAL',
         signalId: signal.id,
         note: 'from scanner',
@@ -237,6 +261,7 @@ describe('OrdersController (e2e)', () => {
         symbol: ticker,
         side: 'BUY',
         quantity: 1,
+        stopLossPrice: 99,
         source: 'MANUAL',
       })
       .expect(201);
@@ -265,6 +290,7 @@ describe('OrdersController (e2e)', () => {
         symbol: ticker,
         side: 'BUY',
         quantity: 1,
+        stopLossPrice: 99,
         source: 'MANUAL',
       })
       .expect(201);
@@ -312,12 +338,12 @@ describe('OrdersController (e2e)', () => {
     await request(app.getHttpServer())
       .post('/orders')
       .set('x-user-email', userEmail)
-      .send({ symbol: ticker, side: 'BUY', quantity: 1, source: 'MANUAL' })
+      .send({ symbol: ticker, side: 'BUY', quantity: 1, stopLossPrice: 99, source: 'MANUAL' })
       .expect(201);
     await request(app.getHttpServer())
       .post('/orders')
       .set('x-user-email', userEmail)
-      .send({ symbol: ticker, side: 'BUY', quantity: 1, source: 'MANUAL' })
+      .send({ symbol: ticker, side: 'BUY', quantity: 1, stopLossPrice: 99, source: 'MANUAL' })
       .expect(201);
 
     const first = await request(app.getHttpServer())

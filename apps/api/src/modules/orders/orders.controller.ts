@@ -17,6 +17,8 @@ type PlaceOrderBody = {
   symbol?: string;
   side?: string;
   quantity?: number;
+  stopLossPrice?: number;
+  takeProfitPrice?: number;
   signalId?: string;
   source?: string;
   note?: string;
@@ -49,6 +51,15 @@ export class OrdersController {
     if (typeof body.quantity !== 'number') {
       throw new BadRequestException('quantity must be a number.');
     }
+    if (body.stopLossPrice !== undefined && typeof body.stopLossPrice !== 'number') {
+      throw new BadRequestException('stopLossPrice must be a number when provided.');
+    }
+    if (
+      body.takeProfitPrice !== undefined &&
+      typeof body.takeProfitPrice !== 'number'
+    ) {
+      throw new BadRequestException('takeProfitPrice must be a number when provided.');
+    }
 
     const principal = this.accountContextService.resolvePrincipal({
       headerUserEmail,
@@ -62,6 +73,8 @@ export class OrdersController {
         symbol,
         side: sideRaw as PaperOrderSide,
         quantity: body.quantity,
+        stopLossPrice: body.stopLossPrice,
+        takeProfitPrice: body.takeProfitPrice,
         source,
         signalId,
         note,
@@ -69,6 +82,26 @@ export class OrdersController {
       principal.userEmail,
       accountId,
     );
+  }
+
+  @Get('stop-suggestion')
+  suggestStopLoss(
+    @Query('symbol') symbolRaw?: string,
+    @Query('lookback') lookbackRaw?: string,
+  ) {
+    const symbol = symbolRaw?.trim().toUpperCase();
+    if (!symbol) {
+      throw new BadRequestException('symbol is required.');
+    }
+    let lookback: number | undefined;
+    if (lookbackRaw) {
+      const parsed = Number.parseInt(lookbackRaw, 10);
+      if (Number.isNaN(parsed) || parsed < 1) {
+        throw new BadRequestException('lookback must be an integer >= 1.');
+      }
+      lookback = parsed;
+    }
+    return this.ordersService.suggestStopLoss(symbol, lookback);
   }
 
   @Post(':id/cancel')

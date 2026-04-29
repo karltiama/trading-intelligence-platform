@@ -7,6 +7,7 @@ import { useSearchParams } from "next/navigation";
 import {
   cancelOrder,
   getSignalById,
+  getStopLossSuggestion,
   listTrackedSymbols,
   listOrders,
   placeOrder,
@@ -30,6 +31,12 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { TradingViewSymbolChart } from "@/components/dashboard/tradingview-symbol-chart";
 import { cn } from "@/lib/utils";
+
+const UI_ASSUMED_EQUITY = 100000;
+const STOP_PRESET_PERCENTS = [0.01, 0.02, 0.05] as const;
+const TAKE_PROFIT_PRESET_PERCENTS = [0.01, 0.02, 0.05] as const;
+const MAX_DEFAULT_STOP_DISTANCE = 0.08;
+const FALLBACK_DEFAULT_STOP_DISTANCE = 0.02;
 
 function formatDate(value: string): string {
   return new Date(value).toLocaleString();
@@ -82,6 +89,11 @@ function OrdersPageContent({
   const [symbol, setSymbol] = useState(() => initialSymbol.trim().toUpperCase());
   const [quantity, setQuantity] = useState("1");
   const [side, setSide] = useState<OrderSide>("BUY");
+  const [stopLossPrice, setStopLossPrice] = useState("");
+  const [takeProfitPrice, setTakeProfitPrice] = useState("");
+  const [referencePrice, setReferencePrice] = useState<number | null>(null);
+  const [stopConfirmed, setStopConfirmed] = useState(false);
+  const [suggestionMessage, setSuggestionMessage] = useState<string | null>(null);
   const [orderNote, setOrderNote] = useState("");
   const [orders, setOrders] = useState<OrderListItem[]>([]);
   const [isLoadingOrders, setIsLoadingOrders] = useState(true);
@@ -134,6 +146,66 @@ function OrdersPageContent({
       cancelled = true;
     };
   }, [initialSignalId]);
+
+  useEffect(() => {
+    const targetSymbol = symbol.trim().toUpperCase();
+    if (!targetSymbol) {
+      setReferencePrice(null);
+      setSuggestionMessage(null);
+      return;
+    }
+    let cancelled = false;
+    queueMicrotask(() => {
+      void getStopLossSuggestion(targetSymbol, 20)
+        .then((suggestion) => {
+          if (cancelled) return;
+          const effectiveReference =
+            signalContext?.entryPrice ?? suggestion.referencePrice;
+          const maxDistanceStop =
+            effectiveReference * (1 - MAX_DEFAULT_STOP_DISTANCE);
+          let nextStop = suggestion.suggestedStopLoss;
+          let message = `Suggested stop from recent swing low: ${fmtUsd(
+            suggestion.suggestedStopLoss,
+          )}`;
+          if (nextStop < maxDistanceStop) {
+            nextStop = effectiveReference * (1 - FALLBACK_DEFAULT_STOP_DISTANCE);
+            message = `Adjusted default stop to ${fmtUsd(
+              nextStop,
+            )} (2% below reference) because historical swing low was too far from current price.`;
+          }
+          setReferencePrice(effectiveReference);
+          setStopLossPrice(nextStop.toFixed(2));
+          setStopConfirmed(false);
+          setSuggestionMessage(message);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          if (signalContext?.entryPrice != null) {
+            const fallbackStop =
+              signalContext.entryPrice * (1 - FALLBACK_DEFAULT_STOP_DISTANCE);
+            setReferencePrice(signalContext.entryPrice);
+            setStopLossPrice(fallbackStop.toFixed(2));
+            setSuggestionMessage(
+              `Using fallback stop: ${fmtUsd(
+                fallbackStop,
+              )} (2% below reference).`,
+            );
+          } else {
+            setReferencePrice(null);
+            setSuggestionMessage('Could not load stop suggestion for this symbol.');
+          }
+        });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [signalContext?.entryPrice, symbol]);
+
+  useEffect(() => {
+    if (signalContext?.entryPrice != null) {
+      setReferencePrice(signalContext.entryPrice);
+    }
+  }, [signalContext]);
 
   const sortedOrders = useMemo(
     () =>
@@ -229,12 +301,17 @@ function OrdersPageContent({
       const parsedQty = Number(quantity);
       const sym = symbol.trim().toUpperCase();
       const noteTrim = orderNote.trim() || undefined;
+      const stopLossValue = Number(stopLossPrice);
+      const takeProfitValue =
+        takeProfitPrice.trim().length > 0 ? Number(takeProfitPrice) : undefined;
 
       if (tradeMode === "signal") {
         await placeOrder({
           symbol: sym,
           side,
           quantity: parsedQty,
+          stopLossPrice: stopLossValue,
+          takeProfitPrice: takeProfitValue,
           source: "SIGNAL",
           signalId: initialSignalId.trim(),
           note: noteTrim,
@@ -244,6 +321,8 @@ function OrdersPageContent({
           symbol: sym,
           side,
           quantity: parsedQty,
+          stopLossPrice: stopLossValue,
+          takeProfitPrice: takeProfitValue,
           source: "MANUAL",
           note: noteTrim,
         });
@@ -277,6 +356,25 @@ function OrdersPageContent({
       : "—";
 
   const signalModeReady = Boolean(initialSignalId.trim() && signalContext && !signalLoadError);
+  const parsedQty = Number(quantity);
+  const parsedStop = Number(stopLossPrice);
+  const hasValidStopLoss = Number.isFinite(parsedStop) && parsedStop > 0;
+  const riskPerShare =
+    referencePrice !== null && hasValidStopLoss ? referencePrice - parsedStop : null;
+  const totalRisk =
+    riskPerShare !== null && Number.isFinite(parsedQty) && parsedQty > 0
+      ? riskPerShare * parsedQty
+      : null;
+  const riskPercent =
+    totalRisk !== null
+      ? totalRisk / UI_ASSUMED_EQUITY
+      : null;
+  const isRiskInvalid =
+    riskPerShare !== null &&
+    totalRisk !== null &&
+    (riskPerShare <= 0 || totalRisk <= 0 || (riskPercent !== null && riskPercent > 0.01));
+  const stopRequiredBlocked =
+    side === 'BUY' && (!hasValidStopLoss || !stopConfirmed || referencePrice === null);
 
   return (
     <div className="flex min-h-svh flex-col gap-6 p-4 md:p-6">
@@ -317,7 +415,7 @@ function OrdersPageContent({
         </CardHeader>
         <CardContent>
           <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-5 md:items-end">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-7 md:items-end">
               <div className="md:col-span-2">
                 <label className="mb-1 block text-xs text-muted-foreground" htmlFor="order-symbol">
                   Symbol
@@ -384,17 +482,120 @@ function OrdersPageContent({
                   <option value="SELL">Sell</option>
                 </select>
               </div>
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground" htmlFor="order-stop">
+                  Stop Loss
+                </label>
+                <Input
+                  id="order-stop"
+                  value={stopLossPrice}
+                  onChange={(event) => {
+                    setStopLossPrice(event.target.value);
+                    setStopConfirmed(false);
+                  }}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  required={side === "BUY"}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground" htmlFor="order-tp">
+                  Take Profit (optional)
+                </label>
+                <Input
+                  id="order-tp"
+                  value={takeProfitPrice}
+                  onChange={(event) => setTakeProfitPrice(event.target.value)}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                />
+              </div>
               <Button
                 type="submit"
                 disabled={
                   isSubmitting ||
                   (tradeMode === "signal" && !signalModeReady) ||
-                  (tradeMode === "manual" && !isManualSymbolValid)
+                  (tradeMode === "manual" && !isManualSymbolValid) ||
+                  stopRequiredBlocked ||
+                  isRiskInvalid
                 }
               >
                 {isSubmitting ? "Submitting..." : "Submit"}
               </Button>
             </div>
+            <div className="grid grid-cols-1 md:grid-cols-7">
+              <div className="md:col-start-5 md:col-span-1">
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {STOP_PRESET_PERCENTS.map((preset) => (
+                    <Button
+                      key={preset}
+                      type="button"
+                      size="sm"
+                      className="h-6 px-2 text-[11px] text-muted-foreground"
+                      variant="ghost"
+                      disabled={referencePrice === null}
+                      onClick={() => {
+                        if (referencePrice === null) return;
+                        const nextStop = referencePrice * (1 - preset);
+                        setStopLossPrice(nextStop.toFixed(2));
+                        setStopConfirmed(false);
+                      }}
+                    >
+                      -{Math.round(preset * 100)}%
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              <div className="md:col-start-6 md:col-span-1">
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {TAKE_PROFIT_PRESET_PERCENTS.map((preset) => (
+                    <Button
+                      key={preset}
+                      type="button"
+                      size="sm"
+                      className="h-6 px-2 text-[11px] text-muted-foreground"
+                      variant="ghost"
+                      disabled={referencePrice === null}
+                      onClick={() => {
+                        if (referencePrice === null) return;
+                        const nextTarget = referencePrice * (1 + preset);
+                        setTakeProfitPrice(nextTarget.toFixed(2));
+                      }}
+                    >
+                      +{Math.round(preset * 100)}%
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={stopConfirmed}
+                onChange={(event) => setStopConfirmed(event.target.checked)}
+              />
+              I confirm this stop loss before submitting.
+            </label>
+            {suggestionMessage ? (
+              <p className="text-xs text-muted-foreground">{suggestionMessage}</p>
+            ) : null}
+            <div className="grid grid-cols-1 gap-2 text-xs md:grid-cols-3">
+              <p>Risk per share: {riskPerShare !== null ? fmtUsd(riskPerShare) : "—"}</p>
+              <p>Total risk: {totalRisk !== null ? fmtUsd(totalRisk) : "—"}</p>
+              <p>
+                Risk %:{" "}
+                {riskPercent !== null && Number.isFinite(riskPercent)
+                  ? `${(riskPercent * 100).toFixed(2)}%`
+                  : "—"}
+              </p>
+            </div>
+            {isRiskInvalid ? (
+              <p className="text-sm text-rose-600">
+                Risk is too high or invalid. Adjust stop loss and quantity.
+              </p>
+            ) : null}
             <div>
               <label className="mb-1 block text-xs text-muted-foreground" htmlFor="order-note">
                 Optional note (journal)

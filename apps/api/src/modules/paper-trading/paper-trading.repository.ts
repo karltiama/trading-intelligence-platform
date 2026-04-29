@@ -58,6 +58,8 @@ export type PaperOrderListRow = {
   signalId: string | null;
   source: TradeSource;
   note: string | null;
+  stopLossPrice: Prisma.Decimal | null;
+  takeProfitPrice: Prisma.Decimal | null;
   fillPrice: Prisma.Decimal | null;
   symbolUniverseType: UniverseType;
 };
@@ -304,6 +306,8 @@ export class PaperTradingRepository {
     signalId?: string | null;
     source: TradeSource;
     note?: string | null;
+    stopLossPrice?: Prisma.Decimal | null;
+    takeProfitPrice?: Prisma.Decimal | null;
     side: PaperOrderSide;
     quantity: Prisma.Decimal;
     price: Prisma.Decimal;
@@ -318,6 +322,8 @@ export class PaperTradingRepository {
           signalId: params.signalId ?? null,
           source: params.source,
           note: params.note ?? null,
+          stopLossPrice: params.stopLossPrice ?? null,
+          takeProfitPrice: params.takeProfitPrice ?? null,
           side: params.side,
           type: 'MARKET',
           status: 'FILLED',
@@ -440,6 +446,8 @@ export class PaperTradingRepository {
         signalId: true,
         source: true,
         note: true,
+        stopLossPrice: true,
+        takeProfitPrice: true,
         side: true,
         type: true,
         status: true,
@@ -465,6 +473,8 @@ export class PaperTradingRepository {
       signalId: row.signalId,
       source: row.source,
       note: row.note,
+      stopLossPrice: row.stopLossPrice,
+      takeProfitPrice: row.takeProfitPrice,
       fillPrice: row.fill?.price ?? null,
       symbolUniverseType: row.symbol.universeType,
     }));

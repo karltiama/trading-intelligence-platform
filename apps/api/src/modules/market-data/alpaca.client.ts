@@ -67,7 +67,7 @@ export class AlpacaClient {
     start.setUTCDate(start.getUTCDate() - Math.max(limit * 2, 30));
     const startIso = encodeURIComponent(start.toISOString());
     const endIso = encodeURIComponent(end.toISOString());
-    const url = `${this.baseUrl}/v2/stocks/bars?symbols=${encodedSymbol}&timeframe=1Day&start=${startIso}&end=${endIso}&limit=${limit}&adjustment=raw&feed=iex&sort=asc`;
+    const url = `${this.baseUrl}/v2/stocks/bars?symbols=${encodedSymbol}&timeframe=1Day&start=${startIso}&end=${endIso}&limit=${limit}&adjustment=raw&feed=iex&sort=desc`;
 
     const response = await fetch(url, {
       method: 'GET',
@@ -91,7 +91,10 @@ export class AlpacaClient {
       `Fetched ${bars.length} daily bars for ${symbol.toUpperCase()}.`,
     );
 
-    return bars.map((bar) => ({
+    return bars
+      .slice()
+      .reverse()
+      .map((bar) => ({
       symbol: symbol.toUpperCase(),
       open: bar.o,
       high: bar.h,
@@ -99,7 +102,7 @@ export class AlpacaClient {
       close: bar.c,
       volume: bar.v,
       timestamp: bar.t,
-    }));
+      }));
   }
 
   async getLatestQuote(symbol: string): Promise<FormattedQuote> {

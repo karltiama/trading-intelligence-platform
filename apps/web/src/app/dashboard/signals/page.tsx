@@ -30,6 +30,56 @@ function fmtDate(value: string): string {
   return new Date(value).toLocaleString();
 }
 
+function deriveMainBlocker(reasons: string[]): string {
+  const lower = reasons.map((reason) => reason.toLowerCase());
+  const trend = lower.find((reason) => reason.includes("trend is weak"));
+  if (trend) return "Trend is not strong enough yet.";
+  const pullback = lower.find(
+    (reason) =>
+      reason.includes("pullback") &&
+      (reason.includes("outside") || reason.includes("stretched") || reason.includes("no ")),
+  );
+  if (pullback) return "Pullback quality is not in preferred zone.";
+  const momentum = lower.find(
+    (reason) =>
+      reason.includes("stochastic") &&
+      (reason.includes("not reset") || reason.includes("preferred")),
+  );
+  if (momentum) return "Momentum reset is not confirmed yet.";
+  const volume = lower.find(
+    (reason) => reason.includes("volume") && reason.includes("below"),
+  );
+  if (volume) return "Volume confirmation is missing.";
+  const risk = lower.find(
+    (reason) =>
+      reason.includes("risk") && (reason.includes("below") || reason.includes("weak")),
+  );
+  if (risk) return "Risk profile is not acceptable yet.";
+  return "Setup is not fully aligned yet.";
+}
+
+function deriveUpgradeCondition(mainBlocker: string, grade: "READY" | "WATCHLIST" | "NOT_READY"): string {
+  if (grade === "READY") {
+    return "Maintain trend and confirmation conditions to keep READY status.";
+  }
+  if (mainBlocker.includes("Trend")) {
+    return "Upgrade when price reclaims and holds stronger trend structure.";
+  }
+  if (mainBlocker.includes("Pullback")) {
+    return "Upgrade when pullback returns to preferred zone and stabilizes.";
+  }
+  if (mainBlocker.includes("Momentum")) {
+    return "Upgrade when momentum reset/turn confirms.";
+  }
+  if (mainBlocker.includes("Volume")) {
+    return "Upgrade when volume confirms relative to baseline.";
+  }
+  if (mainBlocker.includes("Risk")) {
+    return "Upgrade when stop/target structure improves risk profile.";
+  }
+  return "Upgrade when core trend, pullback, and confirmation conditions align.";
+}
+
 function scannerGradeBadgeClass(
   grade: "STRONG" | "WATCHLIST" | "WEAK" | "IGNORE",
 ): string {
@@ -202,6 +252,9 @@ export default function SignalsPage(): React.JSX.Element {
             Strategy checks: close above SMA 50/200, near SMA 20, RSI reset (40-60),
             healthy relative volume, and acceptable risk/reward.
           </p>
+          <p className="text-xs">
+            Timeframe: 1D · Setup window: 3-10 trading days
+          </p>
           {scanSummary ? (
             <div className="rounded-md border p-3 text-foreground">
               Scan completed at {fmtDate(scanSummary.asOf)}. Scanned {scanSummary.scannedSymbols} symbols, qualified{" "}
@@ -265,7 +318,13 @@ export default function SignalsPage(): React.JSX.Element {
             </p>
           ) : null}
           <div className="grid grid-cols-1 gap-3 xl:grid-cols-2 2xl:grid-cols-3">
-            {rankedScanRows.slice(0, 50).map((row) => (
+            {rankedScanRows.slice(0, 50).map((row) => {
+              const mainBlocker = deriveMainBlocker(row.reasons);
+              const upgradeCondition = deriveUpgradeCondition(
+                mainBlocker,
+                row.presentation.grade,
+              );
+              return (
               <div key={row.symbol} className="h-full rounded-md border p-3">
                 <div className="mb-2 flex flex-wrap items-center gap-2">
                   <span className="text-base font-semibold">{row.symbol}</span>
@@ -283,6 +342,15 @@ export default function SignalsPage(): React.JSX.Element {
                   </Badge>
                 </div>
                 <p className="text-sm text-muted-foreground">{row.presentation.explanation}</p>
+                <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                  <p>
+                    As of scan:{" "}
+                    {scanSummary?.asOf ? fmtDate(scanSummary.asOf) : "—"}
+                  </p>
+                  <p>Setup window: {row.timeHorizon ?? "3-10 trading days"}</p>
+                  <p>Main blocker: {mainBlocker}</p>
+                  <p>Upgrade condition: {upgradeCondition}</p>
+                </div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {row.presentation.tags.slice(0, 4).map((tag) => (
                     <Badge key={`${row.symbol}-${tag}`} variant="outline">
@@ -349,7 +417,8 @@ export default function SignalsPage(): React.JSX.Element {
                   </p>
                 ) : null}
               </div>
-            ))}
+            );
+            })}
           </div>
         </CardContent>
       </Card>
