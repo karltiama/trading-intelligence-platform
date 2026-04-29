@@ -1,7 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, SignalStatus, StrategyName } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { scoreTrendPullback } from './signal-scoring';
+import {
+  scoreOversoldBounce,
+  scoreRelativeStrengthBreakout,
+  scoreTrendPullback,
+} from './signal-scoring';
 
 export type SignalListFilters = {
   status?: SignalStatus;
@@ -50,27 +54,14 @@ type ScanSummary = {
 type ScannerScanRow = {
   symbol: string;
   grade: 'STRONG' | 'WATCHLIST' | 'WEAK' | 'IGNORE';
-  totalScore: number;
-  components: {
-    trend: number;
-    pullback: number;
-    stochastic: number;
-    volume: number;
-    riskReward: number;
-  };
+  tags: string[];
+  explanation: string;
   reasons: string[];
-  confidence: number;
-  entryPrice: number | null;
-  stopLoss: number | null;
-  targetPrice: number | null;
-  riskReward: number | null;
-  timeHorizon: string | null;
-  signalDate: string | null;
-  presentation: {
-    grade: 'READY' | 'WATCHLIST' | 'NOT_READY';
-    tags: string[];
-    explanation: string;
-  };
+};
+
+type InternalScannerRow = {
+  row: ScannerScanRow;
+  totalScore: number;
 };
 
 function toPresentation(input: {
@@ -82,7 +73,6 @@ function toPresentation(input: {
     riskReward: number;
   };
 }): {
-  grade: 'READY' | 'WATCHLIST' | 'NOT_READY';
   tags: string[];
   explanation: string;
 } {
@@ -136,29 +126,22 @@ function toPresentation(input: {
     (value) => value === 0,
   ).length;
 
-  const grade: 'READY' | 'WATCHLIST' | 'NOT_READY' =
-    goodComponents >= 4
-      ? 'READY'
-      : goodComponents >= 2 && weakComponents <= 2
-        ? 'WATCHLIST'
-        : 'NOT_READY';
-
   const explanation =
-    grade === 'READY'
+    goodComponents >= 4
       ? 'Setup quality is high across trend, pullback, momentum, volume, and risk profile.'
-      : grade === 'WATCHLIST'
+      : goodComponents >= 2 && weakComponents <= 2
         ? 'Setup has partial alignment. Monitor for stronger pullback, momentum reset, or volume confirmation.'
         : 'Setup is not ready. Multiple core conditions are missing for a higher-conviction entry.';
 
-  return { grade, tags, explanation };
+  return { tags: tags.slice(0, 5), explanation };
 }
 
 @Injectable()
 export class SignalsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async scanTrendPullbackSignals(): Promise<ScanSummary> {
-    const strategyName = StrategyName.TREND_PULLBACK;
+  async scanSignals(strategyName: StrategyName): Promise<ScanSummary> {
+    const scorer = this.getScorer(strategyName);
 
     const symbols = await this.prisma.symbol.findMany({
       where: { isActive: true, universeType: 'CORE' },
@@ -183,37 +166,26 @@ export class SignalsService {
     let qualifiedSignals = 0;
     let upsertedSignals = 0;
     let skippedSymbols = 0;
-    const scannedRows: ScannerScanRow[] = [];
+    const scannedRows: InternalScannerRow[] = [];
     const activeKeys = new Set<string>();
     const now = new Date();
 
     for (const symbol of symbols) {
       if (symbol.dailyPrices.length < 200) {
         skippedSymbols += 1;
+        const presentation = {
+          tags: ['Insufficient Data'],
+          explanation:
+            'Setup cannot be evaluated yet because historical data is insufficient.',
+        };
         scannedRows.push({
-          symbol: symbol.ticker,
-          grade: 'IGNORE',
           totalScore: 0,
-          components: {
-            trend: 0,
-            pullback: 0,
-            stochastic: 0,
-            volume: 0,
-            riskReward: 0,
-          },
-          reasons: ['Insufficient history: need at least 200 daily bars.'],
-          confidence: 0,
-          entryPrice: null,
-          stopLoss: null,
-          targetPrice: null,
-          riskReward: null,
-          timeHorizon: null,
-          signalDate: null,
-          presentation: {
-            grade: 'NOT_READY',
-            tags: ['Insufficient Data'],
-            explanation:
-              'Setup cannot be evaluated yet because historical data is insufficient.',
+          row: {
+            symbol: symbol.ticker,
+            grade: 'IGNORE',
+            tags: presentation.tags,
+            explanation: presentation.explanation,
+            reasons: ['Insufficient history: need at least 200 daily bars.'],
           },
         });
         continue;
@@ -224,28 +196,22 @@ export class SignalsService {
       const highs = symbol.dailyPrices.map((bar) => Number(bar.high));
       const lows = symbol.dailyPrices.map((bar) => Number(bar.low));
       const latestBar = symbol.dailyPrices[symbol.dailyPrices.length - 1];
-      const score = scoreTrendPullback({
+      const score = scorer({
         closes,
         volumes,
         highs,
         lows,
       });
-      const signalDate = new Date(latestBar.date);
-      signalDate.setUTCHours(0, 0, 0, 0);
+      const presentation = toPresentation({ components: score.scannerScore.components });
       scannedRows.push({
-        symbol: symbol.ticker,
-        grade: score.scannerScore.grade,
         totalScore: score.scannerScore.totalScore,
-        components: score.scannerScore.components,
-        reasons: score.reasons,
-        confidence: score.confidence,
-        entryPrice: score.entryPrice,
-        stopLoss: score.stopLoss,
-        targetPrice: score.targetPrice,
-        riskReward: score.riskReward,
-        timeHorizon: score.timeHorizon,
-        signalDate: signalDate.toISOString(),
-        presentation: toPresentation({ components: score.scannerScore.components }),
+        row: {
+          symbol: symbol.ticker,
+          grade: score.scannerScore.grade,
+          tags: presentation.tags,
+          explanation: presentation.explanation,
+          reasons: score.reasons,
+        },
       });
 
       if (!score.isValid) {
@@ -253,6 +219,8 @@ export class SignalsService {
       }
 
       qualifiedSignals += 1;
+      const signalDate = new Date(latestBar.date);
+      signalDate.setUTCHours(0, 0, 0, 0);
       const datePart = signalDate.toISOString().slice(0, 10);
       const signalKey = `${symbol.ticker}|${strategyName}|${datePart}`;
       activeKeys.add(signalKey);
@@ -329,16 +297,17 @@ export class SignalsService {
       if (b.totalScore !== a.totalScore) {
         return b.totalScore - a.totalScore;
       }
-      return a.symbol.localeCompare(b.symbol);
+      return a.row.symbol.localeCompare(b.row.symbol);
     });
-    const matches = scannedRows.filter((row) => row.grade === 'STRONG');
-    const gradeWatchlist = scannedRows.filter((row) => row.grade === 'WATCHLIST');
+    const publicRows = scannedRows.map((item) => item.row);
+    const matches = publicRows.filter((row) => row.grade === 'STRONG');
+    const gradeWatchlist = publicRows.filter((row) => row.grade === 'WATCHLIST');
     const watchlist =
       gradeWatchlist.length > 0
         ? gradeWatchlist
-        : scannedRows.filter((row) => row.grade === 'WEAK').slice(0, 5);
-    const weakCount = scannedRows.filter((row) => row.grade === 'WEAK').length;
-    const ignoreCount = scannedRows.filter((row) => row.grade === 'IGNORE').length;
+        : publicRows.filter((row) => row.grade === 'WEAK').slice(0, 5);
+    const weakCount = publicRows.filter((row) => row.grade === 'WEAK').length;
+    const ignoreCount = publicRows.filter((row) => row.grade === 'IGNORE').length;
 
     return {
       strategyName,
@@ -349,9 +318,9 @@ export class SignalsService {
       skippedSymbols,
       matches,
       watchlist,
-      scanned: scannedRows,
+      scanned: publicRows,
       summary: {
-        totalScanned: scannedRows.length,
+        totalScanned: publicRows.length,
         strongCount: matches.length,
         watchlistCount: watchlist.length,
         weakCount,
@@ -359,6 +328,10 @@ export class SignalsService {
       },
       asOf: now.toISOString(),
     };
+  }
+
+  async scanTrendPullbackSignals(): Promise<ScanSummary> {
+    return this.scanSignals(StrategyName.TREND_PULLBACK);
   }
 
   async list(filters: SignalListFilters = {}): Promise<SignalRow[]> {
@@ -398,6 +371,19 @@ export class SignalsService {
       throw new NotFoundException(`Signal not found: ${id}`);
     }
     return this.toSignalRow(row);
+  }
+
+  private getScorer(strategyName: StrategyName) {
+    if (strategyName === StrategyName.TREND_PULLBACK) {
+      return scoreTrendPullback;
+    }
+    if (strategyName === StrategyName.RELATIVE_STRENGTH_BREAKOUT) {
+      return scoreRelativeStrengthBreakout;
+    }
+    if (strategyName === StrategyName.OVERSOLD_BOUNCE) {
+      return scoreOversoldBounce;
+    }
+    return scoreTrendPullback;
   }
 
   private toSignalRow(row: {

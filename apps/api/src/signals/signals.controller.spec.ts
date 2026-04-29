@@ -4,7 +4,7 @@ import { SignalsService } from './signals.service';
 
 describe('SignalsController', () => {
   it('POST /signals/scan happy path returns scan summary', async () => {
-    const scanTrendPullbackSignals = jest.fn().mockResolvedValue({
+    const scanSignals = jest.fn().mockResolvedValue({
       strategyName: StrategyName.TREND_PULLBACK,
       scannedSymbols: 5,
       qualifiedSignals: 2,
@@ -24,7 +24,7 @@ describe('SignalsController', () => {
       asOf: '2026-04-26T00:00:00.000Z',
     });
     const service = {
-      scanTrendPullbackSignals,
+      scanSignals,
       list: jest.fn(),
       getById: jest.fn(),
     } as unknown as SignalsService;
@@ -32,7 +32,8 @@ describe('SignalsController', () => {
 
     const response = await controller.scan();
 
-    expect(scanTrendPullbackSignals).toHaveBeenCalledTimes(1);
+    expect(scanSignals).toHaveBeenCalledTimes(1);
+    expect(scanSignals).toHaveBeenCalledWith(StrategyName.TREND_PULLBACK);
     expect(response).toEqual({
       strategyName: StrategyName.TREND_PULLBACK,
       scannedSymbols: 5,

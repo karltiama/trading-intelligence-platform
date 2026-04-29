@@ -14,6 +14,7 @@ import {
   type OrderListItem,
   type ScanSignalsSummary,
   type ScannerResultRow,
+  type StrategyName,
   type SignalItem,
 } from "@/lib/api";
 
@@ -58,8 +59,11 @@ function deriveMainBlocker(reasons: string[]): string {
   return "Setup is not fully aligned yet.";
 }
 
-function deriveUpgradeCondition(mainBlocker: string, grade: "READY" | "WATCHLIST" | "NOT_READY"): string {
-  if (grade === "READY") {
+function deriveUpgradeCondition(
+  mainBlocker: string,
+  grade: "STRONG" | "WATCHLIST" | "WEAK" | "IGNORE",
+): string {
+  if (grade === "STRONG") {
     return "Maintain trend and confirmation conditions to keep READY status.";
   }
   if (mainBlocker.includes("Trend")) {
@@ -96,6 +100,8 @@ function scannerGradeBadgeClass(
 }
 
 export default function SignalsPage(): React.JSX.Element {
+  const [selectedStrategy, setSelectedStrategy] =
+    useState<StrategyName>("TREND_PULLBACK");
   const [signals, setSignals] = useState<SignalItem[]>([]);
   const [orders, setOrders] = useState<OrderListItem[]>([]);
   const [scanSummary, setScanSummary] = useState<ScanSignalsSummary | null>(null);
@@ -118,7 +124,7 @@ export default function SignalsPage(): React.JSX.Element {
     try {
       const rows = await listSignals({
         status: "ACTIVE",
-        strategyName: "TREND_PULLBACK",
+        strategyName: selectedStrategy,
       });
       setSignals(rows);
     } catch (err: unknown) {
@@ -126,7 +132,7 @@ export default function SignalsPage(): React.JSX.Element {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [selectedStrategy]);
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -178,7 +184,7 @@ export default function SignalsPage(): React.JSX.Element {
     setIsScanning(true);
     setError(null);
     try {
-      const summary = await scanSignals();
+      const summary = await scanSignals(selectedStrategy);
       setScanSummary(summary);
       await loadSignals();
       try {
@@ -192,6 +198,13 @@ export default function SignalsPage(): React.JSX.Element {
       setIsScanning(false);
     }
   }
+
+  const strategyLabel =
+    selectedStrategy === "TREND_PULLBACK"
+      ? "Trend Pullback"
+      : selectedStrategy === "RELATIVE_STRENGTH_BREAKOUT"
+        ? "Relative Strength Breakout"
+        : "Oversold Bounce";
 
   async function handleAddToWatchlist(symbol: string) {
     const ticker = symbol.trim().toUpperCase();
@@ -233,7 +246,7 @@ export default function SignalsPage(): React.JSX.Element {
       <div className="flex flex-col gap-1">
         <h1 className="text-xl font-semibold tracking-tight">Signals</h1>
         <p className="text-sm text-muted-foreground">
-          Scan tracked symbols for trend pullback setups and review trade context.
+          Scan tracked symbols for selected scanner setups and review trade context.
         </p>
         <p className="text-xs text-muted-foreground">
           Scanning Core Universe ({scanSummary?.scannedSymbols ?? "..."})
@@ -242,15 +255,50 @@ export default function SignalsPage(): React.JSX.Element {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Trend Pullback Scanner</CardTitle>
+          <div className="flex flex-col gap-2">
+            <CardTitle className="text-base">{strategyLabel} Scanner</CardTitle>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant={
+                  selectedStrategy === "TREND_PULLBACK" ? "default" : "outline"
+                }
+                size="sm"
+                onClick={() => setSelectedStrategy("TREND_PULLBACK")}
+              >
+                Trend Pullback
+              </Button>
+              <Button
+                variant={
+                  selectedStrategy === "RELATIVE_STRENGTH_BREAKOUT"
+                    ? "default"
+                    : "outline"
+                }
+                size="sm"
+                onClick={() =>
+                  setSelectedStrategy("RELATIVE_STRENGTH_BREAKOUT")
+                }
+              >
+                Relative Strength Breakout
+              </Button>
+              <Button
+                variant={
+                  selectedStrategy === "OVERSOLD_BOUNCE" ? "default" : "outline"
+                }
+                size="sm"
+                onClick={() => setSelectedStrategy("OVERSOLD_BOUNCE")}
+              >
+                Oversold Bounce
+              </Button>
+            </div>
+          </div>
           <Button onClick={() => void handleScan()} disabled={isScanning}>
             {isScanning ? "Scanning..." : "Run Scan"}
           </Button>
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-muted-foreground">
           <p>
-            Strategy checks: close above SMA 50/200, near SMA 20, RSI reset (40-60),
-            healthy relative volume, and acceptable risk/reward.
+            Strategy checks are scanner-specific and use deterministic grading with
+            qualitative reasons.
           </p>
           <p className="text-xs">
             Timeframe: 1D · Setup window: 3-10 trading days
@@ -322,7 +370,7 @@ export default function SignalsPage(): React.JSX.Element {
               const mainBlocker = deriveMainBlocker(row.reasons);
               const upgradeCondition = deriveUpgradeCondition(
                 mainBlocker,
-                row.presentation.grade,
+                row.grade,
               );
               return (
               <div key={row.symbol} className="h-full rounded-md border p-3">
@@ -330,29 +378,23 @@ export default function SignalsPage(): React.JSX.Element {
                   <span className="text-base font-semibold">{row.symbol}</span>
                   <Badge
                     variant="outline"
-                    className={scannerGradeBadgeClass(
-                      row.presentation.grade === "READY"
-                        ? "STRONG"
-                        : row.presentation.grade === "WATCHLIST"
-                          ? "WATCHLIST"
-                          : "IGNORE",
-                    )}
+                    className={scannerGradeBadgeClass(row.grade)}
                   >
-                    {row.presentation.grade}
+                    {row.grade}
                   </Badge>
                 </div>
-                <p className="text-sm text-muted-foreground">{row.presentation.explanation}</p>
+                <p className="text-sm text-muted-foreground">{row.explanation}</p>
                 <div className="mt-2 space-y-1 text-xs text-muted-foreground">
                   <p>
                     As of scan:{" "}
                     {scanSummary?.asOf ? fmtDate(scanSummary.asOf) : "—"}
                   </p>
-                  <p>Setup window: {row.timeHorizon ?? "3-10 trading days"}</p>
+                  <p>Setup window: 3-10 trading days</p>
                   <p>Main blocker: {mainBlocker}</p>
                   <p>Upgrade condition: {upgradeCondition}</p>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {row.presentation.tags.slice(0, 4).map((tag) => (
+                  {row.tags.slice(0, 4).map((tag) => (
                     <Badge key={`${row.symbol}-${tag}`} variant="outline">
                       {tag}
                     </Badge>
@@ -364,7 +406,7 @@ export default function SignalsPage(): React.JSX.Element {
                   ))}
                 </ul>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                  {row.presentation.grade === "READY" ? (
+                  {row.grade === "STRONG" ? (
                     <Button size="sm" asChild>
                       <Link
                         href={`/dashboard/orders?${new URLSearchParams({
@@ -384,7 +426,7 @@ export default function SignalsPage(): React.JSX.Element {
                       View Chart
                     </Link>
                   </Button>
-                  {row.presentation.grade !== "NOT_READY" ? (
+                  {(row.grade === "STRONG" || row.grade === "WATCHLIST") ? (
                     <Button
                       size="sm"
                       variant="outline"
@@ -396,7 +438,7 @@ export default function SignalsPage(): React.JSX.Element {
                         : "Add to Watchlist"}
                     </Button>
                   ) : null}
-                  {row.presentation.grade === "WATCHLIST" ? (
+                  {row.grade === "WATCHLIST" ? (
                     <Button
                       size="sm"
                       variant="outline"

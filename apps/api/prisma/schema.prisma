@@ -73,6 +73,8 @@ enum SignalStatus {
 
 enum StrategyName {
   TREND_PULLBACK
+  RELATIVE_STRENGTH_BREAKOUT
+  OVERSOLD_BOUNCE
 }
 
 enum AuditEventType {

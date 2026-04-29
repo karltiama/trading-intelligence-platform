@@ -86,13 +86,17 @@ describe('SignalsService', () => {
     expect(summary.matches.length).toBe(summary.summary.strongCount);
     expect(summary.watchlist.length).toBe(summary.summary.watchlistCount);
     expect(summary.scanned.length).toBe(2);
-    expect(summary.scanned[0].presentation).toEqual(
+    expect(summary.scanned[0]).toEqual(
       expect.objectContaining({
+        symbol: expect.any(String),
         grade: expect.any(String),
         tags: expect.any(Array),
         explanation: expect.any(String),
+        reasons: expect.any(Array),
       }),
     );
+    expect(summary.scanned[0]).not.toHaveProperty('totalScore');
+    expect(summary.scanned[0]).not.toHaveProperty('components');
     expect(findManySignals).toHaveBeenCalledWith({
       where: {
         strategyName: StrategyName.TREND_PULLBACK,
@@ -135,7 +139,7 @@ describe('SignalsService', () => {
     expect(summary.summary.watchlistCount).toBeGreaterThan(0);
     expect(summary.watchlist.length).toBeGreaterThan(0);
     expect(upsertSignal).not.toHaveBeenCalled();
-    expect(summary.scanned.every((row) => row.presentation.tags.length > 0)).toBe(true);
+    expect(summary.scanned.every((row) => row.tags.length > 0)).toBe(true);
   });
 
   it('returns scanned rows sorted by score descending', async () => {
@@ -163,9 +167,7 @@ describe('SignalsService', () => {
     const summary = await service.scanTrendPullbackSignals();
 
     expect(summary.scanned.length).toBe(2);
-    expect(summary.scanned[0].totalScore).toBeGreaterThanOrEqual(
-      summary.scanned[1].totalScore,
-    );
+    expect(summary.scanned[0].symbol).toBe('AAA');
   });
 
   it('produces deterministic presentation output for identical component inputs', async () => {
@@ -186,7 +188,8 @@ describe('SignalsService', () => {
     const summary = await service.scanTrendPullbackSignals();
 
     expect(summary.scanned).toHaveLength(2);
-    expect(summary.scanned[0].presentation).toEqual(summary.scanned[1].presentation);
+    expect(summary.scanned[0].tags).toEqual(summary.scanned[1].tags);
+    expect(summary.scanned[0].explanation).toEqual(summary.scanned[1].explanation);
   });
 });
 

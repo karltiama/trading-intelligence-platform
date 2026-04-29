@@ -99,17 +99,15 @@ describe('Signals scanner universe (e2e)', () => {
       expect(first).toEqual(
         expect.objectContaining({
           symbol: expect.any(String),
-          totalScore: expect.any(Number),
           grade: expect.any(String),
-          components: expect.any(Object),
+          tags: expect.any(Array),
+          explanation: expect.any(String),
           reasons: expect.any(Array),
-          presentation: expect.objectContaining({
-            grade: expect.any(String),
-            tags: expect.any(Array),
-            explanation: expect.any(String),
-          }),
         }),
       );
+      expect(first.totalScore).toBeUndefined();
+      expect(first.components).toBeUndefined();
+      expect(first.presentation).toBeUndefined();
     }
 
     const coreSignals = await prisma.signal.findMany({

@@ -7,8 +7,18 @@ export class SignalsController {
   constructor(private readonly signalsService: SignalsService) {}
 
   @Post('scan')
-  scan() {
-    return this.signalsService.scanTrendPullbackSignals();
+  scan(@Query('strategyName') strategyNameRaw?: string) {
+    let strategyName: StrategyName = StrategyName.TREND_PULLBACK;
+    if (strategyNameRaw) {
+      const normalized = strategyNameRaw.trim().toUpperCase();
+      if (!Object.values(StrategyName).includes(normalized as StrategyName)) {
+        throw new BadRequestException(
+          'strategyName must be TREND_PULLBACK, RELATIVE_STRENGTH_BREAKOUT, or OVERSOLD_BOUNCE.',
+        );
+      }
+      strategyName = normalized as StrategyName;
+    }
+    return this.signalsService.scanSignals(strategyName);
   }
 
   @Get()
@@ -32,7 +42,9 @@ export class SignalsController {
     if (strategyNameRaw) {
       const normalized = strategyNameRaw.trim().toUpperCase();
       if (!Object.values(StrategyName).includes(normalized as StrategyName)) {
-        throw new BadRequestException('strategyName must be TREND_PULLBACK.');
+        throw new BadRequestException(
+          'strategyName must be TREND_PULLBACK, RELATIVE_STRENGTH_BREAKOUT, or OVERSOLD_BOUNCE.',
+        );
       }
       strategyName = normalized as StrategyName;
     }

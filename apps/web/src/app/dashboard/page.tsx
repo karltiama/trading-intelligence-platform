@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { ChartCard } from "@/components/dashboard/chart-card";
@@ -8,15 +9,18 @@ import { InsightsPanel } from "@/components/dashboard/insights-panel";
 import { MorningRunbookCard } from "@/components/dashboard/morning-runbook-card";
 import { TodaysSetups } from "@/components/dashboard/todays-setups";
 import { WatchlistTable } from "@/components/dashboard/watchlist-table";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   getMarketSummary,
   getPortfolioPositions,
   getPortfolioSummary,
+  scanSignals,
   type MarketSummaryItem,
   type PortfolioPosition,
   type PortfolioSummary,
+  type ScanSignalsSummary,
 } from "@/lib/api";
 
 const usd = (value: number) =>
@@ -32,6 +36,9 @@ export default function DashboardPage(): React.JSX.Element {
   );
   const [positions, setPositions] = useState<PortfolioPosition[]>([]);
   const [marketSummary, setMarketSummary] = useState<MarketSummaryItem[]>([]);
+  const [scannerSummary, setScannerSummary] = useState<ScanSignalsSummary | null>(null);
+  const [isScannerRunning, setIsScannerRunning] = useState(false);
+  const [scannerError, setScannerError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -83,6 +90,26 @@ export default function DashboardPage(): React.JSX.Element {
     return unique.size;
   }, [marketSummary]);
 
+  const topScannerRows = useMemo(
+    () => (scannerSummary?.scanned ?? []).slice(0, 3),
+    [scannerSummary],
+  );
+
+  async function handleRunScanner() {
+    setIsScannerRunning(true);
+    setScannerError(null);
+    try {
+      const response = await scanSignals();
+      setScannerSummary(response);
+    } catch (err: unknown) {
+      setScannerError(
+        err instanceof Error ? err.message : "Failed to run trend pullback scanner.",
+      );
+    } finally {
+      setIsScannerRunning(false);
+    }
+  }
+
   return (
     <div className="flex min-h-svh flex-col">
       <DashboardHeader />
@@ -96,6 +123,50 @@ export default function DashboardPage(): React.JSX.Element {
         </div>
 
         <MorningRunbookCard />
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-3">
+            <CardTitle className="text-base">Scanner Snapshot</CardTitle>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={() => void handleRunScanner()}
+                disabled={isScannerRunning}
+              >
+                {isScannerRunning ? "Scanning..." : "Run Scan"}
+              </Button>
+              <Button size="sm" variant="outline" asChild>
+                <Link href="/dashboard/signals">View Full Scanner</Link>
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm text-muted-foreground">
+            <p>Timeframe: 1D · Setup window: 3-10 trading days</p>
+            {!scannerSummary ? (
+              <p>Run scan to view latest strong/watchlist candidates.</p>
+            ) : (
+              <>
+                <p>
+                  Last scan: {new Date(scannerSummary.asOf).toLocaleString()} · Strong{" "}
+                  {scannerSummary.summary.strongCount} · Watchlist{" "}
+                  {scannerSummary.summary.watchlistCount}
+                </p>
+                {topScannerRows.length > 0 ? (
+                  <ul className="space-y-1 text-foreground">
+                    {topScannerRows.map((row) => (
+                      <li key={row.symbol}>
+                        {row.symbol} · {row.grade} · {row.explanation}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p>No scanner rows returned yet.</p>
+                )}
+              </>
+            )}
+            {scannerError ? <p className="text-rose-600">{scannerError}</p> : null}
+          </CardContent>
+        </Card>
 
         {isLoading ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">

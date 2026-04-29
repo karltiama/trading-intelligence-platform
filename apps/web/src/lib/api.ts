@@ -228,7 +228,10 @@ export type AutomationGuardrail = {
 };
 
 export type SignalStatus = "ACTIVE" | "EXPIRED" | "INVALIDATED";
-export type StrategyName = "TREND_PULLBACK";
+export type StrategyName =
+  | "TREND_PULLBACK"
+  | "RELATIVE_STRENGTH_BREAKOUT"
+  | "OVERSOLD_BOUNCE";
 
 export type SignalItem = {
   id: string;
@@ -271,27 +274,9 @@ export type ScanSignalsSummary = {
 export type ScannerResultRow = {
   symbol: string;
   grade: "STRONG" | "WATCHLIST" | "WEAK" | "IGNORE";
-  totalScore: number;
-  components: {
-    trend: number;
-    pullback: number;
-    stochastic: number;
-    volume: number;
-    riskReward: number;
-  };
+  tags: string[];
+  explanation: string;
   reasons: string[];
-  confidence: number;
-  entryPrice: number | null;
-  stopLoss: number | null;
-  targetPrice: number | null;
-  riskReward: number | null;
-  timeHorizon: string | null;
-  signalDate: string | null;
-  presentation: {
-    grade: "READY" | "WATCHLIST" | "NOT_READY";
-    tags: string[];
-    explanation: string;
-  };
 };
 
 export type TriggerAutomationRunBody = {
@@ -382,8 +367,11 @@ export function getAutomationGuardrail(
   return apiGet<AutomationGuardrail>(`/automation/guardrails/${strategy}`);
 }
 
-export function scanSignals(): Promise<ScanSignalsSummary> {
-  return apiPost<ScanSignalsSummary>("/signals/scan");
+export function scanSignals(
+  strategyName: StrategyName = "TREND_PULLBACK",
+): Promise<ScanSignalsSummary> {
+  const query = new URLSearchParams({ strategyName });
+  return apiPost<ScanSignalsSummary>(`/signals/scan?${query.toString()}`);
 }
 
 export function listSignals(params?: {
