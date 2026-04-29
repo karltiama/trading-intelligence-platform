@@ -301,6 +301,29 @@ export type ScannerResultRow = {
   reasons: string[];
 };
 
+export type MarketStateValue =
+  | "TRENDING_BULL"
+  | "PULLBACK_RESET"
+  | "BEARISH_WEAK"
+  | "CHOPPY_MIXED";
+export type VolatilityRegime = "CALM" | "NORMAL" | "ELEVATED" | "UNKNOWN";
+export type BreadthState = "STRONG" | "MIXED" | "WEAK";
+export type GuidanceLevel = "FAVORABLE" | "NEUTRAL" | "UNFAVORABLE";
+
+export type MarketStateResponse = {
+  state: MarketStateValue;
+  label: string;
+  summary: string;
+  conditions: string[];
+  strategyGuidance: {
+    trendPullback: GuidanceLevel;
+    relativeStrengthBreakout: GuidanceLevel;
+    oversoldBounce: GuidanceLevel;
+  };
+  volatilityRegime: VolatilityRegime;
+  breadthState: BreadthState;
+};
+
 export type TriggerAutomationRunBody = {
   strategy: string;
   signals: Array<{
@@ -314,6 +337,10 @@ export type TriggerAutomationRunBody = {
 
 export function getMarketSummary(): Promise<MarketSummaryItem[]> {
   return apiGet<MarketSummaryItem[]>("/dashboard/market-summary");
+}
+
+export function getMarketState(): Promise<MarketStateResponse> {
+  return apiGet<MarketStateResponse>("/market-state");
 }
 
 export function getSymbolDailyBars(

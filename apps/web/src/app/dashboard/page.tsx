@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ChartCard } from "@/components/dashboard/chart-card";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { InsightsPanel } from "@/components/dashboard/insights-panel";
+import { MarketStateCard } from "@/components/dashboard/market-state-card";
 import { MorningRunbookCard } from "@/components/dashboard/morning-runbook-card";
 import { TodaysSetups } from "@/components/dashboard/todays-setups";
 import { WatchlistTable } from "@/components/dashboard/watchlist-table";
@@ -14,9 +15,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   getMarketSummary,
+  getMarketState,
   getPortfolioPositions,
   getPortfolioSummary,
   scanSignals,
+  type MarketStateResponse,
   type MarketSummaryItem,
   type PortfolioPosition,
   type PortfolioSummary,
@@ -36,6 +39,7 @@ export default function DashboardPage(): React.JSX.Element {
   );
   const [positions, setPositions] = useState<PortfolioPosition[]>([]);
   const [marketSummary, setMarketSummary] = useState<MarketSummaryItem[]>([]);
+  const [marketState, setMarketState] = useState<MarketStateResponse | null>(null);
   const [scannerSummary, setScannerSummary] = useState<ScanSignalsSummary | null>(null);
   const [isScannerRunning, setIsScannerRunning] = useState(false);
   const [scannerError, setScannerError] = useState<string | null>(null);
@@ -50,15 +54,17 @@ export default function DashboardPage(): React.JSX.Element {
       setError(null);
 
       try {
-        const [summaryRes, positionsRes, marketRes] = await Promise.all([
+        const [summaryRes, positionsRes, marketRes, marketStateRes] = await Promise.all([
           getPortfolioSummary(),
           getPortfolioPositions(),
           getMarketSummary(),
+          getMarketState().catch(() => null),
         ]);
         if (!isMounted) return;
         setPortfolioSummary(summaryRes);
         setPositions(positionsRes);
         setMarketSummary(marketRes);
+        setMarketState(marketStateRes);
       } catch (err: unknown) {
         if (!isMounted) return;
         setError(
@@ -123,6 +129,7 @@ export default function DashboardPage(): React.JSX.Element {
         </div>
 
         <MorningRunbookCard />
+        <MarketStateCard marketState={marketState} />
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-3">

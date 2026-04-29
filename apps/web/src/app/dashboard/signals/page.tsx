@@ -5,13 +5,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { MarketStateCard } from "@/components/dashboard/market-state-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   addTrackedSymbol,
+  getMarketState,
   listScanHistory,
   listOrders,
   listSignals,
   scanSignals,
+  type MarketStateResponse,
   type OrderListItem,
   type ScanHistoryItem,
   type ScanSignalsSummary,
@@ -101,12 +104,36 @@ function scannerGradeBadgeClass(
   return "border-rose-300 bg-rose-50 text-rose-900";
 }
 
+function marketStateStrategyHint(
+  marketState: MarketStateResponse | null,
+  strategy: StrategyName,
+): string | null {
+  if (!marketState) {
+    return null;
+  }
+  const guidance =
+    strategy === "TREND_PULLBACK"
+      ? marketState.strategyGuidance.trendPullback
+      : strategy === "RELATIVE_STRENGTH_BREAKOUT"
+        ? marketState.strategyGuidance.relativeStrengthBreakout
+        : marketState.strategyGuidance.oversoldBounce;
+
+  if (guidance === "FAVORABLE") {
+    return `Current market state (${marketState.label}) is supportive for ${strategy.toLowerCase().replaceAll("_", " ")} setups.`;
+  }
+  if (guidance === "UNFAVORABLE") {
+    return `Current market state favors other setup types more than ${strategy.toLowerCase().replaceAll("_", " ")} setups.`;
+  }
+  return `Current market state is mixed for ${strategy.toLowerCase().replaceAll("_", " ")} setups.`;
+}
+
 export default function SignalsPage(): React.JSX.Element {
   const [selectedStrategy, setSelectedStrategy] =
     useState<StrategyName>("TREND_PULLBACK");
   const [signals, setSignals] = useState<SignalItem[]>([]);
   const [orders, setOrders] = useState<OrderListItem[]>([]);
   const [scanSummary, setScanSummary] = useState<ScanSignalsSummary | null>(null);
+  const [marketState, setMarketState] = useState<MarketStateResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -156,6 +183,14 @@ export default function SignalsPage(): React.JSX.Element {
       void listOrders({ limit: 100 })
         .then(setOrders)
         .catch(() => setOrders([]));
+    });
+  }, []);
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      void getMarketState()
+        .then(setMarketState)
+        .catch(() => setMarketState(null));
     });
   }, []);
 
@@ -331,6 +366,8 @@ export default function SignalsPage(): React.JSX.Element {
         </CardContent>
       </Card>
 
+      <MarketStateCard marketState={marketState} title="Market State Context" />
+
       {scanSummary ? (
         <Card>
           <CardHeader>
@@ -359,7 +396,9 @@ export default function SignalsPage(): React.JSX.Element {
             </div>
             {scanSummary.summary.strongCount === 0 ? (
               <p className="rounded-md border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900">
-                No perfect setups today. Showing highest-ranked watchlist candidates.
+                No strong {strategyLabel.toLowerCase()} setups found.{" "}
+                {marketStateStrategyHint(marketState, selectedStrategy) ??
+                  "Showing highest-ranked watchlist candidates."}
               </p>
             ) : null}
           </CardContent>

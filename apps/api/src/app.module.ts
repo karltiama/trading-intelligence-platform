@@ -6,6 +6,7 @@ import { IndicatorsModule } from './indicators/indicators.module';
 import { AutomationModule } from './modules/automation/automation.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { MarketDataModule } from './modules/market-data/market-data.module';
+import { MarketStateModule } from './modules/market-state/market-state.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { PaperTradingModule } from './modules/paper-trading/paper-trading.module';
 import { PortfolioModule } from './modules/portfolio/portfolio.module';
@@ -21,6 +22,7 @@ import { SignalsModule } from './signals/signals.module';
     HealthModule,
     AutomationModule,
     MarketDataModule,
+    MarketStateModule,
     OrdersModule,
     PortfolioModule,
     RiskModule,
