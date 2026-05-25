@@ -17,6 +17,8 @@ const RANGE_LIMITS: Record<ChartRange, number> = {
 
 type SymbolPriceChartProps = {
   symbol: string;
+  /** `card` = full Card wrapper (default). `plain` = chart body only for embedding in a parent Card. */
+  variant?: "card" | "plain";
 };
 
 type ChartPoint = {
@@ -60,7 +62,33 @@ const usd = (value: number) =>
     maximumFractionDigits: 2,
   }).format(value);
 
-export function SymbolPriceChart({ symbol }: SymbolPriceChartProps): React.JSX.Element {
+function RangeToolbar(props: {
+  range: ChartRange;
+  onRangeChange: (r: ChartRange) => void;
+  disabled: boolean;
+}): React.JSX.Element {
+  const { range, onRangeChange, disabled } = props;
+  return (
+    <div className="flex items-center justify-end gap-1">
+      {(["30D", "90D", "1Y"] as const).map((option) => (
+        <Button
+          key={option}
+          size="sm"
+          variant={range === option ? "default" : "outline"}
+          onClick={() => onRangeChange(option)}
+          disabled={disabled}
+        >
+          {option}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
+export function SymbolPriceChart({
+  symbol,
+  variant = "card",
+}: SymbolPriceChartProps): React.JSX.Element {
   const normalizedSymbol = symbol.trim().toUpperCase();
   const [range, setRange] = useState<ChartRange>("30D");
   const [bars, setBars] = useState<DailyBar[]>([]);
@@ -106,74 +134,82 @@ export function SymbolPriceChart({ symbol }: SymbolPriceChartProps): React.JSX.E
   const pathData = useMemo(() => toPath(points), [points]);
   const latestClose = points.length > 0 ? points[points.length - 1].close : null;
 
+  const body = (
+    <div className="space-y-3">
+      {!normalizedSymbol ? (
+        <p className="text-sm text-muted-foreground">
+          Select a watchlist symbol or sync market data to load daily bars.
+        </p>
+      ) : null}
+
+      {variant === "plain" ? (
+        <RangeToolbar
+          range={range}
+          onRangeChange={setRange}
+          disabled={!normalizedSymbol}
+        />
+      ) : null}
+
+      {isLoading ? (
+        <div className="space-y-2">
+          <Skeleton className="h-36 w-full" />
+          <Skeleton className="h-4 w-40" />
+        </div>
+      ) : null}
+
+      {!isLoading && error ? (
+        <p className="text-sm text-rose-600 dark:text-rose-400">{error}</p>
+      ) : null}
+
+      {!isLoading && !error && normalizedSymbol && points.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No bar data found for this symbol/range.
+        </p>
+      ) : null}
+
+      {!isLoading && !error && points.length > 0 ? (
+        <div className="space-y-2">
+          <div className="h-40 w-full rounded-md border p-2">
+            <svg
+              viewBox="0 0 100 100"
+              preserveAspectRatio="none"
+              className="h-full w-full"
+              aria-label={`${normalizedSymbol} close price line chart`}
+            >
+              <path
+                d={pathData}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                className="text-primary"
+              />
+            </svg>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Latest close: {latestClose === null ? "-" : usd(latestClose)}
+          </p>
+        </div>
+      ) : null}
+    </div>
+  );
+
+  if (variant === "plain") {
+    return body;
+  }
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="text-base">
           Price Context {normalizedSymbol ? `(${normalizedSymbol})` : ""}
         </CardTitle>
-        <div className="flex items-center gap-1">
-          {(["30D", "90D", "1Y"] as const).map((option) => (
-            <Button
-              key={option}
-              size="sm"
-              variant={range === option ? "default" : "outline"}
-              onClick={() => setRange(option)}
-              disabled={!normalizedSymbol}
-            >
-              {option}
-            </Button>
-          ))}
-        </div>
+        <RangeToolbar
+          range={range}
+          onRangeChange={setRange}
+          disabled={!normalizedSymbol}
+        />
       </CardHeader>
-      <CardContent className="space-y-3">
-        {!normalizedSymbol ? (
-          <p className="text-sm text-muted-foreground">
-            Enter a symbol to load chart context.
-          </p>
-        ) : null}
-
-        {isLoading ? (
-          <div className="space-y-2">
-            <Skeleton className="h-36 w-full" />
-            <Skeleton className="h-4 w-40" />
-          </div>
-        ) : null}
-
-        {!isLoading && error ? (
-          <p className="text-sm text-rose-600 dark:text-rose-400">{error}</p>
-        ) : null}
-
-        {!isLoading && !error && normalizedSymbol && points.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No bar data found for this symbol/range.
-          </p>
-        ) : null}
-
-        {!isLoading && !error && points.length > 0 ? (
-          <div className="space-y-2">
-            <div className="h-40 w-full rounded-md border p-2">
-              <svg
-                viewBox="0 0 100 100"
-                preserveAspectRatio="none"
-                className="h-full w-full"
-                aria-label={`${normalizedSymbol} close price line chart`}
-              >
-                <path
-                  d={pathData}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  className="text-primary"
-                />
-              </svg>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Latest close: {latestClose === null ? "-" : usd(latestClose)}
-            </p>
-          </div>
-        ) : null}
-      </CardContent>
+      <CardContent className="space-y-3">{body}</CardContent>
     </Card>
   );
 }

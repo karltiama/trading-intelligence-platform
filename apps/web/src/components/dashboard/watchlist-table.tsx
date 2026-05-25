@@ -1,4 +1,4 @@
- "use client";
+"use client";
 
 import { Minus, TrendingDown, TrendingUp } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -118,7 +118,15 @@ const signalVariant = (
   return "secondary";
 };
 
-export function WatchlistTable() {
+type WatchlistTableProps = {
+  selectedSymbol?: string;
+  onSymbolSelect?: (symbol: string) => void;
+};
+
+export function WatchlistTable({
+  selectedSymbol,
+  onSymbolSelect,
+}: WatchlistTableProps = {}) {
   const [rows, setRows] = useState<WatchlistUiRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -195,7 +203,15 @@ export function WatchlistTable() {
           </TableHeader>
           <TableBody>
             {rows.map((row) => (
-              <TableRow key={row.symbol}>
+              <TableRow
+                key={row.symbol}
+                className={cn(
+                  onSymbolSelect && "cursor-pointer hover:bg-muted/50",
+                  selectedSymbol?.toUpperCase() === row.symbol.toUpperCase() &&
+                    "bg-muted/60",
+                )}
+                onClick={() => onSymbolSelect?.(row.symbol)}
+              >
                 <TableCell className="pl-4 font-medium">{row.symbol}</TableCell>
                 <TableCell className="text-right tabular-nums">
                   {row.price}

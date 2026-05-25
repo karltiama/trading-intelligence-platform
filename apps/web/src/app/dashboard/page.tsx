@@ -45,6 +45,10 @@ export default function DashboardPage(): React.JSX.Element {
   const [scannerError, setScannerError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** `null` = default to first tracked symbol from market summary. */
+  const [chartSymbolSelection, setChartSymbolSelection] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -85,6 +89,20 @@ export default function DashboardPage(): React.JSX.Element {
       isMounted = false;
     };
   }, []);
+
+  const chartSymbol = useMemo(() => {
+    if (marketSummary.length === 0) {
+      return "";
+    }
+    if (chartSymbolSelection === null || chartSymbolSelection.trim() === "") {
+      return marketSummary[0].symbol;
+    }
+    const trimmed = chartSymbolSelection.trim().toUpperCase();
+    const match = marketSummary.find(
+      (item) => item.symbol.toUpperCase() === trimmed,
+    );
+    return match ? match.symbol : marketSummary[0].symbol;
+  }, [marketSummary, chartSymbolSelection]);
 
   const openPositions = useMemo(
     () => positions.filter((position) => position.quantity > 0).length,
@@ -271,12 +289,15 @@ export default function DashboardPage(): React.JSX.Element {
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <div className="lg:col-span-2">
-            <ChartCard />
+            <ChartCard symbol={chartSymbol} />
           </div>
           <InsightsPanel />
         </div>
 
-        <WatchlistTable />
+        <WatchlistTable
+          selectedSymbol={chartSymbol}
+          onSymbolSelect={setChartSymbolSelection}
+        />
 
         <TodaysSetups />
       </div>
