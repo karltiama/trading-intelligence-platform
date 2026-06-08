@@ -21,7 +21,9 @@
     "prisma:validate": "prisma validate",
     "prisma:generate": "prisma generate",
     "prisma:migrate:init": "prisma migrate dev --name init",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "verify:daily-readiness": "ts-node scripts/verify-daily-readiness.ts",
+    "sync:daily": "ts-node scripts/run-daily-sync.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
