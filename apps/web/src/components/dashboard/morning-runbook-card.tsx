@@ -14,12 +14,20 @@ export function MorningRunbookCard() {
       <CardHeader className="pb-2">
         <CardTitle className="text-base">Paper session checklist</CardTitle>
         <CardDescription>
-          Sync data first so scans and fills work (symbols need ~200 daily bars; orders need a
-          tracked symbol with a quote).
+          Daily sync powers scanners and regime (~200 daily bars per CORE symbol). Hourly data
+          powers short chart ranges only — CORE refreshes on a weekday cron; ON_DEMAND fills when
+          you open 7D/30D on the chart.
         </CardDescription>
       </CardHeader>
       <CardContent>
         <ol className="list-decimal space-y-1.5 pl-4 text-sm text-muted-foreground">
+          <li>
+            Ensure daily bars are current (weekday cron or{" "}
+            <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+              npm run verify:daily-readiness
+            </code>{" "}
+            in <code className="font-mono text-xs">apps/api</code>).
+          </li>
           <li>
             Open{" "}
             <Link href="/dashboard/signals" className="font-medium text-foreground hover:underline">
@@ -27,7 +35,10 @@ export function MorningRunbookCard() {
             </Link>{" "}
             and run <strong className="text-foreground">Run Scan</strong>.
           </li>
-          <li>Review setups, then use <strong className="text-foreground">Go to paper trade</strong>.</li>
+          <li>
+            Review setups, then use{" "}
+            <strong className="text-foreground">Go to paper trade</strong>.
+          </li>
           <li>
             On{" "}
             <Link href="/dashboard/orders" className="font-medium text-foreground hover:underline">

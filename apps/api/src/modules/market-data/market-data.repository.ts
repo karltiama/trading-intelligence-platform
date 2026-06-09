@@ -364,6 +364,10 @@ export class MarketDataRepository {
     }));
   }
 
+  // --- H1 tactical cache (Candle only) ---
+  // Intelligence layer (signals, market-state, dashboard) must NOT read/write this section.
+  // Only timeframe H1; bounded by prune + trim in MarketDataService.syncHourlyBars.
+
   async upsertHourlyBars(
     symbolId: string,
     bars: HourlyBarWrite[],

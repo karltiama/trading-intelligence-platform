@@ -16,4 +16,19 @@ describe('SchedulerService', () => {
 
     expect(marketDataService.syncDefaultSymbols).toHaveBeenCalledTimes(1);
   });
+
+  it('runs scheduled CORE hourly sync using market data service', async () => {
+    const marketDataService = {
+      syncCoreHourlySymbols: jest.fn().mockResolvedValue({
+        message: 'Hourly sync complete',
+        symbolsProcessed: 49,
+        rowsUpserted: 320,
+      }),
+    } as unknown as MarketDataService;
+
+    const service = new SchedulerService(marketDataService);
+    await service.syncCoreHourlyBarsWeekdays();
+
+    expect(marketDataService.syncCoreHourlySymbols).toHaveBeenCalledTimes(1);
+  });
 });

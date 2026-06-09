@@ -352,6 +352,21 @@ export function getSymbolDailyBars(
   );
 }
 
+export function getSymbolHourlyBars(
+  symbol: string,
+  limit: number,
+  ensure = false,
+): Promise<DailyBar[]> {
+  const query = new URLSearchParams();
+  query.set("limit", String(limit));
+  if (ensure) {
+    query.set("ensure", "true");
+  }
+  return apiGet<DailyBar[]>(
+    `/market-data/${encodeURIComponent(symbol)}/hourly-bars?${query.toString()}`,
+  );
+}
+
 export function getPortfolioSummary(): Promise<PortfolioSummary> {
   return apiGet<PortfolioSummary>("/portfolio/summary");
 }

@@ -20,14 +20,18 @@ export function ChartCard({ symbol }: ChartCardProps): React.JSX.Element {
     <Card>
       <CardHeader className="border-b">
         <CardTitle className="text-base">
-          {normalized ? `${normalized} · daily closes` : "Price chart"}
+          {normalized ? `${normalized} · price chart` : "Price chart"}
         </CardTitle>
         <CardDescription>
-          End-of-day bars from{" "}
+          7D/30D use hourly bars (
+          <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+            GET /market-data/:symbol/hourly-bars
+          </code>
+          ); 90D/1Y use daily (
           <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
             GET /market-data/:symbol/bars
           </code>
-          . Click a watchlist row to change symbol.
+          ). Click a watchlist row to change symbol.
         </CardDescription>
       </CardHeader>
       <CardContent className="pt-6">

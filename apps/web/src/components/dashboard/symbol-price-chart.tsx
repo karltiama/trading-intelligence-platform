@@ -2,18 +2,31 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { getSymbolDailyBars, type DailyBar } from "@/lib/api";
+import {
+  getSymbolDailyBars,
+  getSymbolHourlyBars,
+  type DailyBar,
+} from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
-type ChartRange = "30D" | "90D" | "1Y";
+type ChartRange = "7D" | "30D" | "90D" | "1Y";
 
-const RANGE_LIMITS: Record<ChartRange, number> = {
-  "30D": 30,
-  "90D": 90,
-  "1Y": 365,
+type RangeConfig = {
+  limit: number;
+  resolution: "hourly" | "daily";
+  ensureHourly: boolean;
 };
+
+const RANGE_CONFIG: Record<ChartRange, RangeConfig> = {
+  "7D": { limit: 80, resolution: "hourly", ensureHourly: true },
+  "30D": { limit: 200, resolution: "hourly", ensureHourly: true },
+  "90D": { limit: 90, resolution: "daily", ensureHourly: false },
+  "1Y": { limit: 365, resolution: "daily", ensureHourly: false },
+};
+
+const CHART_RANGES: ChartRange[] = ["7D", "30D", "90D", "1Y"];
 
 type SymbolPriceChartProps = {
   symbol: string;
@@ -62,6 +75,10 @@ const usd = (value: number) =>
     maximumFractionDigits: 2,
   }).format(value);
 
+function resolutionLabel(range: ChartRange): string {
+  return RANGE_CONFIG[range].resolution === "hourly" ? "hourly" : "daily";
+}
+
 function RangeToolbar(props: {
   range: ChartRange;
   onRangeChange: (r: ChartRange) => void;
@@ -69,20 +86,36 @@ function RangeToolbar(props: {
 }): React.JSX.Element {
   const { range, onRangeChange, disabled } = props;
   return (
-    <div className="flex items-center justify-end gap-1">
-      {(["30D", "90D", "1Y"] as const).map((option) => (
-        <Button
-          key={option}
-          size="sm"
-          variant={range === option ? "default" : "outline"}
-          onClick={() => onRangeChange(option)}
-          disabled={disabled}
-        >
-          {option}
-        </Button>
-      ))}
+    <div className="flex flex-col items-end gap-1">
+      <div className="flex items-center justify-end gap-1">
+        {CHART_RANGES.map((option) => (
+          <Button
+            key={option}
+            size="sm"
+            variant={range === option ? "default" : "outline"}
+            onClick={() => onRangeChange(option)}
+            disabled={disabled}
+          >
+            {option}
+          </Button>
+        ))}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        7D/30D hourly · 90D/1Y daily
+      </p>
     </div>
   );
+}
+
+async function fetchBarsForRange(
+  symbol: string,
+  range: ChartRange,
+): Promise<DailyBar[]> {
+  const config = RANGE_CONFIG[range];
+  if (config.resolution === "hourly") {
+    return getSymbolHourlyBars(symbol, config.limit, config.ensureHourly);
+  }
+  return getSymbolDailyBars(symbol, config.limit);
 }
 
 export function SymbolPriceChart({
@@ -107,10 +140,7 @@ export function SymbolPriceChart({
       setIsLoading(true);
       setError(null);
       try {
-        const response = await getSymbolDailyBars(
-          normalizedSymbol,
-          RANGE_LIMITS[range],
-        );
+        const response = await fetchBarsForRange(normalizedSymbol, range);
         if (!isMounted) return;
         setBars(response);
       } catch (err: unknown) {
@@ -133,12 +163,14 @@ export function SymbolPriceChart({
   const points = useMemo(() => toChartPoints(bars), [bars]);
   const pathData = useMemo(() => toPath(points), [points]);
   const latestClose = points.length > 0 ? points[points.length - 1].close : null;
+  const activeResolution = resolutionLabel(range);
 
   const body = (
     <div className="space-y-3">
       {!normalizedSymbol ? (
         <p className="text-sm text-muted-foreground">
-          Select a watchlist symbol or sync market data to load daily bars.
+          Select a watchlist symbol to load chart data (hourly for 7D/30D, daily
+          for 90D/1Y).
         </p>
       ) : null}
 
@@ -163,7 +195,7 @@ export function SymbolPriceChart({
 
       {!isLoading && !error && normalizedSymbol && points.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No bar data found for this symbol/range.
+          No {activeResolution} bar data found for this symbol/range.
         </p>
       ) : null}
 
@@ -174,7 +206,7 @@ export function SymbolPriceChart({
               viewBox="0 0 100 100"
               preserveAspectRatio="none"
               className="h-full w-full"
-              aria-label={`${normalizedSymbol} close price line chart`}
+              aria-label={`${normalizedSymbol} ${activeResolution} close price line chart`}
             >
               <path
                 d={pathData}
@@ -186,7 +218,8 @@ export function SymbolPriceChart({
             </svg>
           </div>
           <p className="text-xs text-muted-foreground">
-            Latest close: {latestClose === null ? "-" : usd(latestClose)}
+            {activeResolution === "hourly" ? "Latest hour close" : "Latest close"}
+            : {latestClose === null ? "-" : usd(latestClose)}
           </p>
         </div>
       ) : null}

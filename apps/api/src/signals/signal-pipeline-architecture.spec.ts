@@ -5,8 +5,10 @@ const API_SRC = join(__dirname, '..');
 
 const INTELLIGENCE_LAYER_FILES = [
   join(API_SRC, 'signals', 'signals.service.ts'),
+  join(API_SRC, 'signals', 'signal-scoring.ts'),
   join(API_SRC, 'modules', 'market-state', 'market-state.service.ts'),
   join(API_SRC, 'modules', 'dashboard', 'dashboard.service.ts'),
+  join(API_SRC, 'modules', 'dashboard', 'market-summary.mapper.ts'),
 ];
 
 const FORBIDDEN_PATTERNS = [

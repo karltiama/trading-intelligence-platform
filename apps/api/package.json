@@ -24,6 +24,7 @@
     "prisma:studio": "prisma studio",
     "verify:daily-readiness": "ts-node scripts/verify-daily-readiness.ts",
     "sync:daily": "ts-node scripts/run-daily-sync.ts",
+    "sync:hourly": "ts-node scripts/run-hourly-sync.ts",
     "sync:hourly:symbol": "ts-node scripts/sync-hourly-symbol.ts"
   },
   "dependencies": {

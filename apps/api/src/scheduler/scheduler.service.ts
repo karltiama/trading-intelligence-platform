@@ -27,4 +27,24 @@ export class SchedulerService {
       );
     }
   }
+
+  @Cron('5 * * * 1-5', {
+    name: 'sync-core-hourly-bars-weekdays',
+    timeZone: 'America/New_York',
+  })
+  async syncCoreHourlyBarsWeekdays(): Promise<void> {
+    this.logger.log('Starting scheduled CORE hourly market-data sync.');
+    try {
+      const result = await this.marketDataService.syncCoreHourlySymbols();
+      this.logger.log(
+        `Scheduled CORE hourly market-data sync completed. symbolsProcessed=${result.symbolsProcessed} rowsUpserted=${result.rowsUpserted}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Scheduled CORE hourly market-data sync failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
 }
