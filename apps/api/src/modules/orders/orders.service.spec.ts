@@ -10,6 +10,7 @@ describe('OrdersService', () => {
     listOrders: jest.fn(),
     listOrdersPage: jest.fn(),
     cancelOrder: jest.fn(),
+    updateOrderLevels: jest.fn(),
   } as unknown as PaperTradingService;
 
   const marketDataService = {
@@ -185,5 +186,29 @@ describe('OrdersService', () => {
     expect(suggestion.symbol).toBe('GOOGL');
     expect(suggestion.referencePrice).toBeCloseTo(349.78, 2);
     expect(suggestion.suggestedStopLoss).toBeCloseTo(321.7976, 4);
+  });
+
+  it('delegates order level updates to paper trading service', async () => {
+    (paperTradingService.updateOrderLevels as jest.Mock).mockResolvedValue({
+      orderId: 'ord-1',
+      stopLossPrice: 97,
+      takeProfitPrice: 108,
+    });
+
+    const result = await service.updateOrderLevels(
+      'ord-1',
+      { stopLossPrice: 97, takeProfitPrice: 108 },
+      'orders-test@local.test',
+    );
+
+    expect(result.orderId).toBe('ord-1');
+    expect(result.stopLossPrice).toBe(97);
+    expect(result.takeProfitPrice).toBe(108);
+    expect(paperTradingService.updateOrderLevels).toHaveBeenCalledWith(
+      'ord-1',
+      { stopLossPrice: 97, takeProfitPrice: 108 },
+      'orders-test@local.test',
+      undefined,
+    );
   });
 });

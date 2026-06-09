@@ -9,6 +9,46 @@ export class PortfolioController {
     private readonly accountContextService: AccountContextService,
   ) {}
 
+  @Get()
+  getPortfolio(
+    @Headers('x-user-email') headerUserEmail?: string,
+    @Query('userEmail') queryUserEmail?: string,
+    @Query('accountId') accountIdRaw?: string,
+  ) {
+    const principal = this.accountContextService.resolvePrincipal({
+      headerUserEmail,
+      queryUserEmail,
+    });
+    const accountId = accountIdRaw?.trim() || undefined;
+    return this.portfolioService.getPortfolio(principal.userEmail, accountId);
+  }
+
+  @Get('history')
+  getHistory(
+    @Headers('x-user-email') headerUserEmail?: string,
+    @Query('userEmail') queryUserEmail?: string,
+    @Query('accountId') accountIdRaw?: string,
+    @Query('limit') limitRaw?: string,
+  ) {
+    const principal = this.accountContextService.resolvePrincipal({
+      headerUserEmail,
+      queryUserEmail,
+    });
+    const accountId = accountIdRaw?.trim() || undefined;
+    let limit = 30;
+    if (limitRaw !== undefined && limitRaw.trim() !== '') {
+      const parsed = Number.parseInt(limitRaw, 10);
+      if (!Number.isNaN(parsed) && parsed > 0) {
+        limit = Math.min(parsed, 90);
+      }
+    }
+    return this.portfolioService.getHistory(
+      principal.userEmail,
+      accountId,
+      limit,
+    );
+  }
+
   @Get('positions')
   getPositions(
     @Headers('x-user-email') headerUserEmail?: string,

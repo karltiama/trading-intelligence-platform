@@ -38,11 +38,20 @@ type AlpacaLatestQuoteResponse = {
   };
 };
 
+type AlpacaAssetResponse = {
+  symbol: string;
+  exchange: string;
+  status: string;
+  tradable: boolean;
+};
+
 @Injectable()
 export class AlpacaClient {
   private readonly logger = new Logger(AlpacaClient.name);
   private readonly baseUrl =
     process.env.ALPACA_BASE_URL ?? 'https://data.alpaca.markets';
+  private readonly tradingBaseUrl =
+    process.env.ALPACA_TRADING_BASE_URL ?? 'https://paper-api.alpaca.markets';
 
   private getHeaders(): Record<string, string> {
     const apiKey = process.env.ALPACA_API_KEY;
@@ -177,5 +186,35 @@ export class AlpacaClient {
       ask: quote?.ap ?? null,
       timestamp: quote?.t ?? null,
     };
+  }
+
+  async getAsset(symbol: string): Promise<AlpacaAssetResponse | null> {
+    const ticker = symbol.trim().toUpperCase();
+    if (!ticker) {
+      return null;
+    }
+
+    const url = `${this.tradingBaseUrl}/v2/assets/${encodeURIComponent(ticker)}`;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: this.getHeaders(),
+    });
+
+    if (response.status === 404) {
+      return null;
+    }
+
+    if (!response.ok) {
+      const details = await response.text();
+      throw new BadGatewayException(
+        `Alpaca asset request failed (${response.status}): ${details}`,
+      );
+    }
+
+    const payload = (await response.json()) as AlpacaAssetResponse;
+    this.logger.log(
+      `Resolved asset ${ticker} on ${payload.exchange.toUpperCase()}.`,
+    );
+    return payload;
   }
 }

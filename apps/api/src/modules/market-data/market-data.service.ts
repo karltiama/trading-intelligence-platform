@@ -22,6 +22,7 @@ import {
 } from './market-data-hourly.constants';
 import { MarketDataRepository } from './market-data.repository';
 import { FormattedBar, FormattedQuote } from './dto/market-data-response.dto';
+import { formatTradingViewSymbol } from './tradingview-symbol.util';
 
 @Injectable()
 export class MarketDataService {
@@ -69,6 +70,24 @@ export class MarketDataService {
       throw new BadRequestException('Symbol is required.');
     }
     return normalized;
+  }
+
+  async resolveTradingViewChartSymbol(symbol: string): Promise<{
+    ticker: string;
+    exchange: string;
+    tradingViewSymbol: string;
+  }> {
+    const ticker = this.normalizeTicker(symbol);
+    const asset = await this.alpacaClient.getAsset(ticker);
+    if (!asset) {
+      throw new NotFoundException(`Unknown symbol: ${ticker}`);
+    }
+
+    return {
+      ticker,
+      exchange: asset.exchange.toUpperCase(),
+      tradingViewSymbol: formatTradingViewSymbol(asset.exchange, ticker),
+    };
   }
 
   /**
@@ -235,6 +254,28 @@ export class MarketDataService {
       ? this.resolveHourlyPolicy(tracked.universeType)
       : 'ON_DEMAND';
     return this.syncHourlyBars(ticker, policy);
+  }
+
+  async ensureHourlyBarsForSymbols(symbols: string[]): Promise<void> {
+    const unique = [
+      ...new Set(
+        symbols
+          .map((symbol) => this.normalizeTicker(symbol))
+          .filter((symbol) => symbol.length > 0),
+      ),
+    ];
+
+    for (const symbol of unique) {
+      try {
+        await this.ensureHourlyBars(symbol);
+      } catch (error) {
+        this.logger.warn(
+          `Skipped hourly ensure for ${symbol}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
   }
 
   async ensureHourlyBars(symbol: string): Promise<void> {

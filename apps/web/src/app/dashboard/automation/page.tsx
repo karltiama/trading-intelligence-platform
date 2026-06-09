@@ -22,6 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { fmtUsd } from "@/lib/order-levels";
 
 function formatDate(value: string | null): string {
   if (!value) return "-";
@@ -282,8 +283,11 @@ export default function AutomationPage(): React.JSX.Element {
                   <TableRow>
                     <TableHead className="pl-4">Symbol</TableHead>
                     <TableHead>Side</TableHead>
+                    <TableHead className="text-right">Fill</TableHead>
+                    <TableHead className="text-right">Stop</TableHead>
+                    <TableHead className="text-right">Target</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead className="pr-4">Reason</TableHead>
+                    <TableHead className="pr-4">Details</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -291,6 +295,15 @@ export default function AutomationPage(): React.JSX.Element {
                     <TableRow key={signal.executionId}>
                       <TableCell className="pl-4 font-medium">{signal.symbol}</TableCell>
                       <TableCell>{signal.side}</TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                        {fmtUsd(signal.fillPrice)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-rose-700 dark:text-rose-400">
+                        {fmtUsd(signal.stopLossPrice)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-emerald-700 dark:text-emerald-400">
+                        {fmtUsd(signal.takeProfitPrice)}
+                      </TableCell>
                       <TableCell>
                         <Badge variant={signalStatusVariant(signal.status)}>
                           {signal.status === "REJECTED_RISK"
@@ -298,8 +311,14 @@ export default function AutomationPage(): React.JSX.Element {
                             : signal.status}
                         </Badge>
                       </TableCell>
-                      <TableCell className="pr-4 text-sm text-muted-foreground">
-                        {signal.reason ?? "-"}
+                      <TableCell className="pr-4 text-xs text-muted-foreground">
+                        {signal.status === "PLACED" && signal.tradeReason ? (
+                          <span className="line-clamp-2" title={signal.tradeReason}>
+                            {signal.tradeReason}
+                          </span>
+                        ) : (
+                          (signal.reason ?? "—")
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}

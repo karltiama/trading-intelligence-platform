@@ -8,7 +8,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { PaperOrderSide } from '@prisma/client';
+import { PaperOrderSide, StrategyName } from '@prisma/client';
 import { AccountContextService } from '../account-context/account-context.service';
 import { AutomationService } from './automation.service';
 
@@ -25,6 +25,12 @@ type TriggerRunBody = {
   signals?: RunSignalBody[];
 };
 
+type ExecuteFromActiveSignalsBody = {
+  strategyName?: string;
+  quantityPerSignal?: number;
+  signalIds?: string[];
+};
+
 type UpdateGuardrailBody = {
   enabled?: boolean;
   cooldownSeconds?: number;
@@ -36,6 +42,58 @@ export class AutomationController {
     private readonly automationService: AutomationService,
     private readonly accountContextService: AccountContextService,
   ) {}
+
+  @Post('runs/from-active-signals')
+  executeFromActiveSignals(
+    @Body() body: ExecuteFromActiveSignalsBody,
+    @Headers('x-user-email') headerUserEmail?: string,
+    @Query('userEmail') queryUserEmail?: string,
+    @Query('accountId') accountIdRaw?: string,
+  ) {
+    const strategyNameRaw = body.strategyName?.trim().toUpperCase();
+    if (!strategyNameRaw) {
+      throw new BadRequestException('strategyName is required.');
+    }
+    if (
+      !Object.values(StrategyName).includes(strategyNameRaw as StrategyName)
+    ) {
+      throw new BadRequestException(
+        'strategyName must be TREND_PULLBACK, RELATIVE_STRENGTH_BREAKOUT, or OVERSOLD_BOUNCE.',
+      );
+    }
+    const strategyName = strategyNameRaw as StrategyName;
+
+    const quantityPerSignal = body.quantityPerSignal ?? 1;
+    if (
+      !Number.isInteger(quantityPerSignal) ||
+      quantityPerSignal <= 0
+    ) {
+      throw new BadRequestException(
+        'quantityPerSignal must be a positive integer.',
+      );
+    }
+
+    const signalIdsRaw = body.signalIds;
+    if (signalIdsRaw !== undefined && !Array.isArray(signalIdsRaw)) {
+      throw new BadRequestException('signalIds must be an array.');
+    }
+    const signalIds = signalIdsRaw
+      ?.map((id) => id.trim())
+      .filter((id) => id.length > 0);
+
+    const accountId = accountIdRaw?.trim() || undefined;
+    const principal = this.accountContextService.resolvePrincipal({
+      headerUserEmail,
+      queryUserEmail,
+    });
+    return this.automationService.executeFromActiveSignals({
+      strategyName,
+      quantityPerSignal,
+      signalIds: signalIds && signalIds.length > 0 ? signalIds : undefined,
+      userEmail: principal.userEmail,
+      accountId,
+    });
+  }
 
   @Post('runs')
   triggerRun(

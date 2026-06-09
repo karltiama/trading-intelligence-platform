@@ -1,7 +1,21 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, UniverseType } from '@prisma/client';
-import { H1_MAX_BARS_PER_SYMBOL, H1_TIMEFRAME } from './market-data-hourly.constants';
+import {
+  H1_MAX_BARS_PER_SYMBOL,
+  H1_STALE_AFTER_MS,
+  H1_TIMEFRAME,
+} from './market-data-hourly.constants';
+import {
+  resolveSymbolMarkPrice,
+  type MarkPriceSource,
+} from './mark-price.util';
 import { PrismaService } from '../../prisma/prisma.service';
+
+export type SymbolMarkPriceRow = {
+  close: Prisma.Decimal;
+  asOf: Date;
+  source: MarkPriceSource;
+};
 
 export type DailyBarWrite = {
   date: Date;
@@ -480,5 +494,94 @@ export class MarketDataRepository {
       volume: row.volume,
       timestamp: row.timestamp,
     }));
+  }
+
+  async findLatestMarkPricesForSymbols(
+    symbolIds: string[],
+    staleAfterMs = H1_STALE_AFTER_MS,
+  ): Promise<Record<string, SymbolMarkPriceRow>> {
+    if (symbolIds.length === 0) {
+      return {};
+    }
+
+    const hourlyRows = await this.prisma.candle.findMany({
+      where: { symbolId: { in: symbolIds }, timeframe: H1_TIMEFRAME },
+      orderBy: [{ symbolId: 'asc' }, { timestamp: 'desc' }],
+      select: {
+        symbolId: true,
+        close: true,
+        timestamp: true,
+      },
+    });
+
+    const dailyRows = await this.prisma.dailyPrice.findMany({
+      where: { symbolId: { in: symbolIds } },
+      orderBy: [{ symbolId: 'asc' }, { date: 'desc' }],
+      select: {
+        symbolId: true,
+        close: true,
+        date: true,
+      },
+    });
+
+    const latestHourly: Record<
+      string,
+      { close: Prisma.Decimal; timestamp: Date }
+    > = {};
+    for (const row of hourlyRows) {
+      if (!latestHourly[row.symbolId]) {
+        latestHourly[row.symbolId] = {
+          close: row.close,
+          timestamp: row.timestamp,
+        };
+      }
+    }
+
+    const latestDaily: Record<
+      string,
+      { close: Prisma.Decimal; date: Date }
+    > = {};
+    for (const row of dailyRows) {
+      if (!latestDaily[row.symbolId]) {
+        latestDaily[row.symbolId] = {
+          close: row.close,
+          date: row.date,
+        };
+      }
+    }
+
+    const result: Record<string, SymbolMarkPriceRow> = {};
+    const nowMs = Date.now();
+
+    for (const symbolId of symbolIds) {
+      const hourly = latestHourly[symbolId];
+      const daily = latestDaily[symbolId];
+      const resolved = resolveSymbolMarkPrice({
+        hourly: hourly
+          ? {
+              close: Number(hourly.close),
+              timestamp: hourly.timestamp,
+            }
+          : null,
+        daily: daily
+          ? {
+              close: Number(daily.close),
+              date: daily.date,
+            }
+          : null,
+        nowMs,
+        staleAfterMs,
+      });
+      if (!resolved) {
+        continue;
+      }
+      result[symbolId] = {
+        close: new Prisma.Decimal(resolved.close),
+        asOf: resolved.asOf,
+        source: resolved.source,
+      };
+    }
+
+    return result;
   }
 }

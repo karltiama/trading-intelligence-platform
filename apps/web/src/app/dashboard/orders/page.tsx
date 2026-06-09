@@ -6,13 +6,16 @@ import { useSearchParams } from "next/navigation";
 
 import {
   cancelOrder,
+  getPortfolioPositions,
   getSignalById,
   getStopLossSuggestion,
   listTrackedSymbols,
   listOrders,
   placeOrder,
+  updateOrderLevels,
   type OrderListItem,
   type OrderSide,
+  type PortfolioPosition,
   type SignalItem,
   type TrackedSymbolRow,
   type TradeSource,
@@ -30,6 +33,8 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { TradingViewSymbolChart } from "@/components/dashboard/tradingview-symbol-chart";
+import { resolveOrderStop, resolveOrderTarget, fmtPct, pctGainClass } from "@/lib/order-levels";
+import { formatMarkAsOf, isUsMarketSessionOpen } from "@/lib/market-session";
 import { cn } from "@/lib/utils";
 
 const UI_ASSUMED_EQUITY = 100000;
@@ -72,6 +77,21 @@ function universeBadgeClass(universeType: "CORE" | "ON_DEMAND"): string {
   return "border-amber-600/40 text-amber-700 dark:text-amber-400";
 }
 
+function formatStrategyLabel(strategyName: string | null): string | null {
+  if (!strategyName) return null;
+  if (strategyName === "TREND_PULLBACK") return "Trend Pullback";
+  if (strategyName === "RELATIVE_STRENGTH_BREAKOUT") {
+    return "Relative Strength Breakout";
+  }
+  if (strategyName === "OVERSOLD_BOUNCE") return "Oversold Bounce";
+  return strategyName.replaceAll("_", " ");
+}
+
+function truncateText(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength - 1)}…`;
+}
+
 type TradeMode = "manual" | "signal";
 
 type OrdersPageContentProps = {
@@ -107,6 +127,13 @@ function OrdersPageContent({
   const [isLoadingLinked, setIsLoadingLinked] = useState(false);
   const [trackedSymbols, setTrackedSymbols] = useState<TrackedSymbolRow[]>([]);
   const [isLoadingSymbols, setIsLoadingSymbols] = useState(true);
+  const [positions, setPositions] = useState<PortfolioPosition[]>([]);
+  const [isLoadingPositions, setIsLoadingPositions] = useState(true);
+  const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
+  const [editingSymbol, setEditingSymbol] = useState("");
+  const [editStop, setEditStop] = useState("");
+  const [editTarget, setEditTarget] = useState("");
+  const [isSavingLevels, setIsSavingLevels] = useState(false);
 
   useEffect(() => {
     if (!initialSignalId) {
@@ -230,6 +257,28 @@ function OrdersPageContent({
     }
   }, []);
 
+  const loadPositions = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) {
+      setIsLoadingPositions(true);
+    }
+    try {
+      const rows = await getPortfolioPositions();
+      setPositions(rows);
+    } catch {
+      if (!options?.silent) {
+        setPositions([]);
+      }
+    } finally {
+      if (!options?.silent) {
+        setIsLoadingPositions(false);
+      }
+    }
+  }, []);
+
+  const refreshTradingData = useCallback(async () => {
+    await Promise.all([loadOrders(), loadPositions()]);
+  }, [loadOrders, loadPositions]);
+
   const loadLinkedOrders = useCallback(async () => {
     if (!initialSignalId.trim()) {
       setLinkedOrders([]);
@@ -260,9 +309,23 @@ function OrdersPageContent({
 
   useEffect(() => {
     queueMicrotask(() => {
-      void loadOrders();
+      void refreshTradingData();
     });
-  }, [loadOrders]);
+  }, [refreshTradingData]);
+
+  useEffect(() => {
+    if (!isUsMarketSessionOpen()) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void loadPositions({ silent: true });
+    }, 60_000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [loadPositions]);
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -275,6 +338,75 @@ function OrdersPageContent({
       void loadTrackedSymbols();
     });
   }, [loadTrackedSymbols]);
+
+  function startEditingLevels(input: {
+    orderId: string;
+    symbol: string;
+    stop: number | null;
+    target: number | null;
+  }) {
+    setEditingOrderId(input.orderId);
+    setEditingSymbol(input.symbol);
+    setEditStop(input.stop != null ? input.stop.toFixed(2) : "");
+    setEditTarget(input.target != null ? input.target.toFixed(2) : "");
+    setError(null);
+    setMessage(null);
+  }
+
+  function cancelEditingLevels() {
+    setEditingOrderId(null);
+    setEditingSymbol("");
+    setEditStop("");
+    setEditTarget("");
+  }
+
+  async function handleSaveLevels() {
+    if (!editingOrderId) {
+      return;
+    }
+    const stopValue = Number(editStop);
+    if (!Number.isFinite(stopValue) || stopValue <= 0) {
+      setError("Stop loss must be a positive number.");
+      return;
+    }
+    const targetRaw = editTarget.trim();
+    const targetValue =
+      targetRaw.length > 0 ? Number(targetRaw) : undefined;
+    if (targetValue !== undefined && (!Number.isFinite(targetValue) || targetValue <= 0)) {
+      setError("Target must be a positive number when provided.");
+      return;
+    }
+
+    setIsSavingLevels(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await updateOrderLevels(editingOrderId, {
+        stopLossPrice: stopValue,
+        takeProfitPrice: targetValue,
+      });
+      setMessage(`Updated stop/target for ${editingSymbol}.`);
+      cancelEditingLevels();
+      await refreshTradingData();
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error ? err.message : "Failed to update order levels.",
+      );
+    } finally {
+      setIsSavingLevels(false);
+    }
+  }
+
+  const sortedPositions = useMemo(
+    () =>
+      [...positions].sort((a, b) => {
+        const gainA = a.pctGain ?? 0;
+        const gainB = b.pctGain ?? 0;
+        if (gainB !== gainA) return gainB - gainA;
+        return a.symbol.localeCompare(b.symbol);
+      }),
+    [positions],
+  );
 
   const activeTrackedSymbols = useMemo(
     () => trackedSymbols.filter((row) => row.isActive),
@@ -328,7 +460,7 @@ function OrdersPageContent({
         });
       }
       setMessage("Order submitted successfully.");
-      await loadOrders();
+      await refreshTradingData();
       await loadLinkedOrders();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to place order.");
@@ -343,7 +475,7 @@ function OrdersPageContent({
     try {
       await cancelOrder(orderId);
       setMessage(`Canceled order ${orderId}.`);
-      await loadOrders();
+      await refreshTradingData();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to cancel order.");
     }
@@ -731,6 +863,171 @@ function OrdersPageContent({
         </Card>
       ) : null}
 
+      {editingOrderId ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              Edit stop / target — {editingSymbol}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3 md:flex-row md:items-end">
+            <label className="flex flex-1 flex-col gap-1 text-sm">
+              Stop loss
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                value={editStop}
+                onChange={(event) => setEditStop(event.target.value)}
+                disabled={isSavingLevels}
+              />
+            </label>
+            <label className="flex flex-1 flex-col gap-1 text-sm">
+              Target (optional)
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                value={editTarget}
+                onChange={(event) => setEditTarget(event.target.value)}
+                disabled={isSavingLevels}
+              />
+            </label>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => void handleSaveLevels()}
+                disabled={isSavingLevels}
+              >
+                {isSavingLevels ? "Saving..." : "Save levels"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={cancelEditingLevels}
+                disabled={isSavingLevels}
+              >
+                Cancel
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Open positions</CardTitle>
+          {isUsMarketSessionOpen() ? (
+            <p className="text-xs text-muted-foreground">
+              Prices refresh every 60s during US market hours.
+            </p>
+          ) : null}
+        </CardHeader>
+        <CardContent className="p-0">
+          {isLoadingPositions ? (
+            <div className="p-4 text-sm text-muted-foreground">
+              Loading positions...
+            </div>
+          ) : null}
+          {!isLoadingPositions && sortedPositions.length === 0 ? (
+            <div className="p-4 text-sm text-muted-foreground">
+              No open positions. Place a paper BUY to see live P&amp;L here.
+            </div>
+          ) : null}
+          {!isLoadingPositions && sortedPositions.length > 0 ? (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="pl-4">Symbol</TableHead>
+                    <TableHead className="text-right">Qty</TableHead>
+                    <TableHead className="text-right">Avg cost</TableHead>
+                    <TableHead className="text-right">Current</TableHead>
+                    <TableHead className="text-right">Gain</TableHead>
+                    <TableHead className="text-right">Unrealized</TableHead>
+                    <TableHead className="text-right">Stop</TableHead>
+                    <TableHead className="text-right">Target</TableHead>
+                    <TableHead className="text-right">To stop</TableHead>
+                    <TableHead className="text-right">To target</TableHead>
+                    <TableHead className="pr-4 text-right">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sortedPositions.map((position) => (
+                    <TableRow key={position.symbol}>
+                      <TableCell className="pl-4 font-medium">
+                        {position.symbol}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {position.quantity}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                        {fmtUsd(position.averageCost)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        <div>{fmtUsd(position.currentPrice)}</div>
+                        {position.asOf ? (
+                          <div className="text-xs text-muted-foreground">
+                            {formatMarkAsOf(position.asOf)}
+                            {position.priceSource ? ` · ${position.priceSource}` : ""}
+                          </div>
+                        ) : null}
+                      </TableCell>
+                      <TableCell
+                        className={cn(
+                          "text-right tabular-nums font-medium",
+                          pctGainClass(position.pctGain),
+                        )}
+                      >
+                        {fmtPct(position.pctGain)}
+                      </TableCell>
+                      <TableCell
+                        className={cn(
+                          "text-right tabular-nums",
+                          pctGainClass(position.unrealizedPnl),
+                        )}
+                      >
+                        {fmtUsd(position.unrealizedPnl)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-rose-700 dark:text-rose-400">
+                        {fmtUsd(position.stopLossPrice)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-emerald-700 dark:text-emerald-400">
+                        {fmtUsd(position.takeProfitPrice)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                        {fmtPct(position.pctToStop)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                        {fmtPct(position.pctToTarget)}
+                      </TableCell>
+                      <TableCell className="pr-4 text-right">
+                        {position.linkedOrderId ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              startEditingLevels({
+                                orderId: position.linkedOrderId as string,
+                                symbol: position.symbol,
+                                stop: position.stopLossPrice,
+                                target: position.takeProfitPrice,
+                              })
+                            }
+                          >
+                            Edit levels
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Order history</CardTitle>
@@ -753,10 +1050,13 @@ function OrdersPageContent({
                   <TableRow>
                     <TableHead className="pl-4">Time</TableHead>
                     <TableHead>Source</TableHead>
+                    <TableHead className="min-w-[14rem]">Why</TableHead>
                     <TableHead>Symbol</TableHead>
                     <TableHead>Side</TableHead>
                     <TableHead className="text-right">Qty</TableHead>
                     <TableHead className="text-right">Fill</TableHead>
+                    <TableHead className="text-right">Stop</TableHead>
+                    <TableHead className="text-right">Target</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="pr-4 text-right">Action</TableHead>
                   </TableRow>
@@ -771,6 +1071,30 @@ function OrdersPageContent({
                         <Badge variant="outline" className={sourceBadgeClass(order.source)}>
                           {order.source}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="max-w-xs">
+                        {order.tradeRationale ? (
+                          <div className="space-y-1">
+                            {order.tradeRationale.strategyName ? (
+                              <Badge variant="outline" className="text-xs">
+                                {formatStrategyLabel(order.tradeRationale.strategyName)}
+                              </Badge>
+                            ) : null}
+                            <p
+                              className="text-xs text-muted-foreground line-clamp-2"
+                              title={order.tradeRationale.reason}
+                            >
+                              {truncateText(order.tradeRationale.reason, 120)}
+                            </p>
+                            {order.tradeRationale.confidence != null ? (
+                              <p className="text-[11px] text-muted-foreground">
+                                Confidence {order.tradeRationale.confidence}
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
                       </TableCell>
                       <TableCell className="font-medium">
                         <span className="inline-flex items-center gap-2">
@@ -790,6 +1114,12 @@ function OrdersPageContent({
                       <TableCell className="text-right tabular-nums text-muted-foreground">
                         {fmtUsd(order.fillPrice)}
                       </TableCell>
+                      <TableCell className="text-right tabular-nums text-rose-700 dark:text-rose-400">
+                        {fmtUsd(resolveOrderStop(order))}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-emerald-700 dark:text-emerald-400">
+                        {fmtUsd(resolveOrderTarget(order))}
+                      </TableCell>
                       <TableCell>
                         <Badge variant={statusVariant(order.status)}>{order.status}</Badge>
                       </TableCell>
@@ -802,8 +1132,23 @@ function OrdersPageContent({
                           >
                             Cancel
                           </Button>
+                        ) : order.status === "FILLED" && order.side === "BUY" ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              startEditingLevels({
+                                orderId: order.orderId,
+                                symbol: order.symbol,
+                                stop: resolveOrderStop(order),
+                                target: resolveOrderTarget(order),
+                              })
+                            }
+                          >
+                            Edit levels
+                          </Button>
                         ) : (
-                          <span className="text-xs text-muted-foreground">-</span>
+                          <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </TableCell>
                     </TableRow>

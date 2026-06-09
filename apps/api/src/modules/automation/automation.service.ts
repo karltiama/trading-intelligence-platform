@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PaperOrderSide, TradeSource } from '@prisma/client';
+import { PaperOrderSide, StrategyName, TradeSource } from '@prisma/client';
 import {
   PaperTradingService,
   type PlaceMarketOrderResult,
@@ -24,6 +24,10 @@ export type AutomationSignalInput = {
   side: PaperOrderSide;
   signalAt: Date;
   quantity: number;
+  scannerSignalId?: string;
+  note?: string;
+  stopLossPrice?: number;
+  targetPrice?: number;
 };
 
 export type AutomationRunResult = {
@@ -78,6 +82,10 @@ export type AutomationSignalExecutionItem = {
     | 'FAILED';
   reason: string | null;
   orderId: string | null;
+  stopLossPrice: number | null;
+  takeProfitPrice: number | null;
+  fillPrice: number | null;
+  tradeReason: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -264,6 +272,52 @@ export class AutomationService {
     return this.executeRun(params);
   }
 
+  async executeFromActiveSignals(params: {
+    strategyName: StrategyName;
+    quantityPerSignal: number;
+    signalIds?: string[];
+    userEmail: string;
+    accountId?: string;
+  }): Promise<AutomationRunResult> {
+    if (
+      !Number.isInteger(params.quantityPerSignal) ||
+      params.quantityPerSignal <= 0
+    ) {
+      throw new BadRequestException(
+        'quantityPerSignal must be a positive integer.',
+      );
+    }
+
+    const rows = await this.automationRepository.findActiveSignalsForExecution({
+      strategyName: params.strategyName,
+      signalIds: params.signalIds,
+    });
+    if (rows.length === 0) {
+      throw new BadRequestException(
+        `No active signals found for strategy ${params.strategyName}.`,
+      );
+    }
+
+    const signals: AutomationSignalInput[] = rows.map((row) => ({
+      symbolId: row.symbolId,
+      symbol: row.ticker,
+      side: PaperOrderSide.BUY,
+      signalAt: row.signalDate,
+      quantity: params.quantityPerSignal,
+      scannerSignalId: row.id,
+      note: this.buildAutomationTradeNote(row),
+      stopLossPrice: row.stopLoss ?? undefined,
+      targetPrice: row.targetPrice ?? undefined,
+    }));
+
+    return this.executeRun({
+      strategy: params.strategyName,
+      signals,
+      userEmail: params.userEmail,
+      accountId: params.accountId,
+    });
+  }
+
   async listRuns(
     userEmail: string,
     filters: AutomationRunListFilters = {},
@@ -384,6 +438,10 @@ export class AutomationService {
       status: row.status,
       reason: row.reason,
       orderId: row.orderId,
+      stopLossPrice: row.stopLossPrice,
+      takeProfitPrice: row.takeProfitPrice,
+      fillPrice: row.fillPrice,
+      tradeReason: row.tradeReason,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     }));
@@ -454,10 +512,25 @@ export class AutomationService {
         side: signal.side,
         quantity: signal.quantity,
         source: TradeSource.AUTOMATION,
+        signalId: signal.scannerSignalId,
+        note: signal.note,
+        stopLossPrice: signal.stopLossPrice,
+        takeProfitPrice: signal.targetPrice,
       },
       userEmail,
       accountId,
     );
+  }
+
+  private buildAutomationTradeNote(input: {
+    strategyName: string;
+    reason: string;
+    confidence: number | null;
+  }): string {
+    const confidence =
+      input.confidence != null ? ` confidence=${input.confidence}` : '';
+    const text = `[${input.strategyName}]${confidence} ${input.reason}`;
+    return text.length <= 500 ? text : `${text.slice(0, 497)}...`;
   }
 
   private async ensureOwnedAccount(

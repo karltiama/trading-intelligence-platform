@@ -52,6 +52,7 @@ describe('PortfolioController (e2e)', () => {
         symbol: ticker,
         side: 'BUY',
         quantity: 2,
+        stopLossPrice: 95,
       })
       .expect(201);
 
@@ -73,6 +74,7 @@ describe('PortfolioController (e2e)', () => {
     expect(position.unrealizedPnl).toBe(0);
     expect(position.realizedPnl).toBe(0);
     expect(position.asOf).toBe('2026-04-25T00:00:00.000Z');
+    expect(position.priceSource).toBe('D1');
 
     const summary = await request(app.getHttpServer())
       .get('/portfolio/summary')
@@ -96,6 +98,7 @@ describe('PortfolioController (e2e)', () => {
         symbol: ticker,
         side: 'BUY',
         quantity: 2,
+        stopLossPrice: 95,
       })
       .expect(201);
 
@@ -146,6 +149,7 @@ describe('PortfolioController (e2e)', () => {
     expect(position.unrealizedPnl).toBe(20);
     expect(position.realizedPnl).toBe(20);
     expect(position.asOf).toBe('2026-04-26T00:00:00.000Z');
+    expect(position.priceSource).toBe('D1');
 
     const summary = await request(app.getHttpServer())
       .get('/portfolio/summary')
@@ -157,6 +161,49 @@ describe('PortfolioController (e2e)', () => {
       summary.body.cashBalance + summary.body.positionsValue,
     );
     expect(summary.body.asOf).toBe('2026-04-26T00:00:00.000Z');
+  });
+
+  it('returns combined portfolio view and records a daily snapshot', async () => {
+    await request(app.getHttpServer())
+      .post('/orders')
+      .set('x-user-email', userEmail)
+      .send({
+        symbol: ticker,
+        side: 'BUY',
+        quantity: 2,
+        stopLossPrice: 95,
+      })
+      .expect(201);
+
+    const portfolio = await request(app.getHttpServer())
+      .get('/portfolio')
+      .set('x-user-email', userEmail)
+      .expect(200);
+
+    expect(portfolio.body.summary).toBeDefined();
+    expect(Array.isArray(portfolio.body.positions)).toBe(true);
+    expect(portfolio.body.summary.positionCount).toBe(1);
+    expect(portfolio.body.summary.startingCash).toBeGreaterThan(0);
+    expect(portfolio.body.summary.totalReturn).toBeDefined();
+    expect(portfolio.body.summary.cashPct).not.toBeNull();
+    expect(portfolio.body.summary.investedPct).not.toBeNull();
+    expect(portfolio.body.summary.positionsWithoutStop).toBe(0);
+
+    const position = portfolio.body.positions.find(
+      (row: { symbol: string }) => row.symbol === ticker,
+    );
+    expect(position).toBeDefined();
+    expect(position.costBasis).toBe(200);
+    expect(position.weightPct).not.toBeNull();
+
+    const history = await request(app.getHttpServer())
+      .get('/portfolio/history?limit=5')
+      .set('x-user-email', userEmail)
+      .expect(200);
+
+    expect(Array.isArray(history.body)).toBe(true);
+    expect(history.body.length).toBeGreaterThanOrEqual(1);
+    expect(history.body[0].totalEquity).toBe(portfolio.body.summary.totalEquity);
   });
 
   it('rejects portfolio summary without user context', async () => {
@@ -211,6 +258,22 @@ describe('PortfolioController (e2e)', () => {
       },
     });
     await prisma.symbol.deleteMany({ where: { ticker } });
+
+    const user = await prisma.user.findUnique({
+      where: { email: userEmail },
+      select: { id: true },
+    });
+    if (user) {
+      const accounts = await prisma.paperAccount.findMany({
+        where: { userId: user.id },
+        select: { id: true },
+      });
+      for (const account of accounts) {
+        await prisma.paperAccountSnapshot.deleteMany({
+          where: { accountId: account.id },
+        });
+      }
+    }
   });
 
   afterAll(async () => {

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
+import { getTradingViewChartSymbol } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type TradingViewSymbolChartProps = {
@@ -15,10 +16,46 @@ export function TradingViewSymbolChart({
 }: TradingViewSymbolChartProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const normalizedSymbol = symbol.trim().toUpperCase();
-  const tradingViewSymbol = useMemo(() => {
-    if (!normalizedSymbol) return "";
-    // Use NASDAQ as sensible default for common US equity symbols.
-    return `NASDAQ:${normalizedSymbol}`;
+  const [tradingViewSymbol, setTradingViewSymbol] = useState("");
+  const [resolveError, setResolveError] = useState<string | null>(null);
+  const [isResolving, setIsResolving] = useState(false);
+
+  useEffect(() => {
+    if (!normalizedSymbol) {
+      setTradingViewSymbol("");
+      setResolveError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setIsResolving(true);
+    setResolveError(null);
+
+    void getTradingViewChartSymbol(normalizedSymbol)
+      .then((result) => {
+        if (!cancelled) {
+          setTradingViewSymbol(result.tradingViewSymbol);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setTradingViewSymbol("");
+          setResolveError(
+            error instanceof Error
+              ? error.message
+              : "Could not resolve chart exchange for this symbol.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsResolving(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [normalizedSymbol]);
 
   useEffect(() => {
@@ -66,12 +103,19 @@ export function TradingViewSymbolChart({
         <CardTitle className="text-base">
           Embedded Chart {normalizedSymbol ? `(${normalizedSymbol})` : ""}
         </CardTitle>
+        {tradingViewSymbol ? (
+          <p className="text-xs text-muted-foreground">{tradingViewSymbol}</p>
+        ) : null}
       </CardHeader>
       <CardContent>
         {!normalizedSymbol ? (
           <p className="text-sm text-muted-foreground">
             Enter a symbol to load embedded chart context.
           </p>
+        ) : isResolving ? (
+          <p className="text-sm text-muted-foreground">Resolving chart symbol...</p>
+        ) : resolveError ? (
+          <p className="text-sm text-destructive">{resolveError}</p>
         ) : (
           <div
             className="rounded-md border"

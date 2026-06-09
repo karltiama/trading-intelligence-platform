@@ -25,7 +25,7 @@ export type PlaceMarketOrderInput = {
   source: TradeSource;
   stopLossPrice?: number;
   takeProfitPrice?: number;
-  /** Required when source is SIGNAL; ignored for MANUAL and AUTOMATION. */
+  /** Required when source is SIGNAL; optional for AUTOMATION scanner-linked orders. */
   signalId?: string;
   note?: string | null;
 };
@@ -63,6 +63,14 @@ export type PaperOrderListItem = {
   takeProfitPrice: number | null;
   fillPrice: number | null;
   symbolUniverseType: UniverseType;
+  tradeRationale: {
+    strategyName: string | null;
+    reason: string;
+    confidence: number | null;
+    entryPrice: number | null;
+    stopLoss: number | null;
+    targetPrice: number | null;
+  } | null;
 };
 
 export type PaperOrderPage = {
@@ -121,10 +129,19 @@ export class PaperTradingService {
         );
       }
     } else if (input.source === TradeSource.AUTOMATION) {
-      if (input.signalId?.trim()) {
-        throw new BadRequestException(
-          'signalId is not supported for AUTOMATION orders.',
-        );
+      const trimmedSignalId = input.signalId?.trim();
+      if (trimmedSignalId) {
+        const link =
+          await this.paperTradingRepository.findSignalSymbolLink(
+            trimmedSignalId,
+          );
+        if (!link) {
+          throw new BadRequestException(`Signal not found: ${trimmedSignalId}`);
+        }
+        if (link.symbolId !== symbolQuote.symbolId) {
+          throw new BadRequestException('signalId does not match order symbol.');
+        }
+        linkedSignalId = link.id;
       }
     }
 
@@ -222,6 +239,105 @@ export class PaperTradingService {
     return { orderId, status: 'CANCELED' };
   }
 
+  async updateOrderLevels(
+    orderId: string,
+    input: {
+      stopLossPrice?: number;
+      takeProfitPrice?: number;
+    },
+    userEmail: string,
+    accountId?: string,
+  ): Promise<{
+    orderId: string;
+    stopLossPrice: number | null;
+    takeProfitPrice: number | null;
+  }> {
+    if (
+      input.stopLossPrice === undefined &&
+      input.takeProfitPrice === undefined
+    ) {
+      throw new BadRequestException(
+        'at least one of stopLossPrice or takeProfitPrice is required.',
+      );
+    }
+    if (
+      input.stopLossPrice !== undefined &&
+      !Number.isFinite(input.stopLossPrice)
+    ) {
+      throw new BadRequestException('stopLossPrice must be a valid number.');
+    }
+    if (
+      input.takeProfitPrice !== undefined &&
+      !Number.isFinite(input.takeProfitPrice)
+    ) {
+      throw new BadRequestException('takeProfitPrice must be a valid number.');
+    }
+
+    const account = await this.resolveScopedAccount(userEmail, accountId);
+    const existing = await this.paperTradingRepository.findOrderLevelsRow(
+      account.id,
+      orderId,
+    );
+    if (!existing) {
+      throw new NotFoundException(`Order not found: ${orderId}`);
+    }
+    if (existing.status !== 'FILLED' || existing.side !== 'BUY') {
+      throw new BadRequestException(
+        'only filled BUY orders support stop/target edits.',
+      );
+    }
+    if (!existing.fillPrice) {
+      throw new BadRequestException(
+        `Order ${orderId} has no fill price for level validation.`,
+      );
+    }
+
+    const fillPrice = existing.fillPrice.toNumber();
+    const stopLossPrice =
+      input.stopLossPrice ??
+      (existing.stopLossPrice ? existing.stopLossPrice.toNumber() : null);
+    const takeProfitPrice =
+      input.takeProfitPrice ??
+      (existing.takeProfitPrice ? existing.takeProfitPrice.toNumber() : null);
+
+    if (stopLossPrice === null) {
+      throw new BadRequestException(
+        'stopLossPrice is required when order has no existing stop.',
+      );
+    }
+    if (stopLossPrice >= fillPrice) {
+      throw new BadRequestException(
+        `stopLossPrice must be below fill price (${fillPrice.toFixed(2)}).`,
+      );
+    }
+    if (takeProfitPrice !== null && takeProfitPrice <= fillPrice) {
+      throw new BadRequestException(
+        `takeProfitPrice must be above fill price (${fillPrice.toFixed(2)}).`,
+      );
+    }
+
+    const updated = await this.paperTradingRepository.updateFilledBuyOrderLevels(
+      account.id,
+      orderId,
+      {
+        stopLossPrice: new Prisma.Decimal(stopLossPrice),
+        takeProfitPrice:
+          takeProfitPrice === null
+            ? null
+            : new Prisma.Decimal(takeProfitPrice),
+      },
+    );
+    if (!updated) {
+      throw new ConflictException(`Order ${orderId} levels could not be updated.`);
+    }
+
+    return {
+      orderId,
+      stopLossPrice,
+      takeProfitPrice,
+    };
+  }
+
   async listOrders(
     userEmail: string,
     filters: PaperOrderListFilters = {},
@@ -251,6 +367,7 @@ export class PaperTradingService {
         : null,
       fillPrice: row.fillPrice ? row.fillPrice.toNumber() : null,
       symbolUniverseType: row.symbolUniverseType,
+      tradeRationale: row.tradeRationale,
     }));
   }
 
@@ -297,6 +414,7 @@ export class PaperTradingService {
         : null,
       fillPrice: row.fillPrice ? row.fillPrice.toNumber() : null,
       symbolUniverseType: row.symbolUniverseType,
+      tradeRationale: row.tradeRationale,
     }));
 
     const last = visibleRows[visibleRows.length - 1];

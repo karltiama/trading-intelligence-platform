@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { INestApplication } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, SignalStatus, StrategyName } from '@prisma/client';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types';
@@ -497,6 +497,74 @@ describe('AutomationController (e2e)', () => {
       .expect(400);
   });
 
+  it('executes paper orders from active scanner signals', async () => {
+    const symbol = await prisma.symbol.findUnique({
+      where: { ticker },
+      select: { id: true },
+    });
+    if (!symbol) {
+      throw new Error('Expected seeded symbol.');
+    }
+
+    const signalDate = new Date('2026-04-25T00:00:00.000Z');
+    const signal = await prisma.signal.create({
+      data: {
+        symbolId: symbol.id,
+        strategyName: StrategyName.TREND_PULLBACK,
+        status: SignalStatus.ACTIVE,
+        signalKey: `${ticker}|TREND_PULLBACK|2026-04-25`,
+        signalDate,
+        confidence: 85,
+        entryPrice: new Prisma.Decimal(100),
+        stopLoss: new Prisma.Decimal(95),
+        targetPrice: new Prisma.Decimal(110),
+        reason: 'Strong trend pullback setup.',
+        expiresAt: new Date('2026-05-05T00:00:00.000Z'),
+      },
+      select: { id: true },
+    });
+
+    const triggered = await request(app.getHttpServer())
+      .post('/automation/runs/from-active-signals')
+      .set('x-user-email', userEmail)
+      .send({
+        strategyName: 'TREND_PULLBACK',
+        quantityPerSignal: 1,
+        signalIds: [signal.id],
+      })
+      .expect(201);
+
+    expect(triggered.body.strategy).toBe('TREND_PULLBACK');
+    expect(triggered.body.userEmail).toBe(userEmail);
+    expect(triggered.body.totalSignals).toBe(1);
+    expect(triggered.body.placed).toBe(1);
+    expect(triggered.body.rejectedRisk).toBe(0);
+    expect(triggered.body.failed).toBe(0);
+
+    const orders = await request(app.getHttpServer())
+      .get('/orders?limit=20')
+      .set('x-user-email', userEmail)
+      .expect(200);
+    const linkedOrder = orders.body.find(
+      (row: { signalId: string | null }) => row.signalId === signal.id,
+    );
+    expect(linkedOrder).toBeDefined();
+    expect(linkedOrder.source).toBe('AUTOMATION');
+    expect(linkedOrder.tradeRationale?.strategyName).toBe('TREND_PULLBACK');
+    expect(linkedOrder.tradeRationale?.reason).toContain(
+      'Strong trend pullback setup.',
+    );
+
+    const runSignals = await request(app.getHttpServer())
+      .get(`/automation/runs/${triggered.body.runId}/signals`)
+      .set('x-user-email', userEmail)
+      .expect(200);
+    expect(runSignals.body).toHaveLength(1);
+    expect(runSignals.body[0].stopLossPrice).not.toBeNull();
+    expect(runSignals.body[0].takeProfitPrice).not.toBeNull();
+    expect(runSignals.body[0].tradeReason).toContain('Strong trend pullback');
+  });
+
   afterEach(async () => {
     const symbol = await prisma.symbol.findUnique({
       where: { ticker },
@@ -504,6 +572,7 @@ describe('AutomationController (e2e)', () => {
     });
 
     if (symbol) {
+      await prisma.signal.deleteMany({ where: { symbolId: symbol.id } });
       await prisma.automationSignalExecution.deleteMany({
         where: { symbolId: symbol.id },
       });
@@ -518,8 +587,9 @@ describe('AutomationController (e2e)', () => {
     await prisma.automationGuardrail.deleteMany({
       where: { userEmail },
     });
-    await prisma.strategyRun.deleteMany({
+    await prisma.automationRun.deleteMany({
       where: {
+        userEmail,
         strategy: {
           in: [
             'mean-reversion',
@@ -530,6 +600,7 @@ describe('AutomationController (e2e)', () => {
             'cooldown-strategy',
             'cursor-strategy-a',
             'cursor-strategy-b',
+            'TREND_PULLBACK',
           ],
         },
       },

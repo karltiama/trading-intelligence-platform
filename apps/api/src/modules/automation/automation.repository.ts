@@ -1,6 +1,19 @@
 import { Injectable } from '@nestjs/common';
-import { PaperOrderSide, Prisma, RunStatus } from '@prisma/client';
+import { PaperOrderSide, Prisma, RunStatus, StrategyName } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+
+export type ActiveSignalForExecutionRow = {
+  id: string;
+  symbolId: string;
+  ticker: string;
+  signalDate: Date;
+  strategyName: StrategyName;
+  reason: string;
+  confidence: number | null;
+  entryPrice: number | null;
+  stopLoss: number | null;
+  targetPrice: number | null;
+};
 
 export type AutomationRunRow = {
   id: string;
@@ -34,6 +47,10 @@ export type AutomationSignalExecutionRow = {
     | 'FAILED';
   reason: string | null;
   orderId: string | null;
+  stopLossPrice: number | null;
+  takeProfitPrice: number | null;
+  fillPrice: number | null;
+  tradeReason: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -60,6 +77,49 @@ export type AutomationRunListFilters = {
 @Injectable()
 export class AutomationRepository {
   constructor(private readonly prisma: PrismaService) {}
+
+  async findActiveSignalsForExecution(params: {
+    strategyName: StrategyName;
+    signalIds?: string[];
+  }): Promise<ActiveSignalForExecutionRow[]> {
+    const where: Prisma.SignalWhereInput = {
+      status: 'ACTIVE',
+      strategyName: params.strategyName,
+    };
+    if (params.signalIds && params.signalIds.length > 0) {
+      where.id = { in: params.signalIds };
+    }
+
+    const rows = await this.prisma.signal.findMany({
+      where,
+      orderBy: [{ confidence: 'desc' }, { createdAt: 'desc' }],
+      select: {
+        id: true,
+        symbolId: true,
+        signalDate: true,
+        strategyName: true,
+        reason: true,
+        confidence: true,
+        entryPrice: true,
+        stopLoss: true,
+        targetPrice: true,
+        symbol: { select: { ticker: true } },
+      },
+    });
+
+    return rows.map((row) => ({
+      id: row.id,
+      symbolId: row.symbolId,
+      ticker: row.symbol.ticker,
+      signalDate: row.signalDate,
+      strategyName: row.strategyName,
+      reason: row.reason,
+      confidence: row.confidence,
+      entryPrice: row.entryPrice ? Number(row.entryPrice) : null,
+      stopLoss: row.stopLoss ? Number(row.stopLoss) : null,
+      targetPrice: row.targetPrice ? Number(row.targetPrice) : null,
+    }));
+  }
 
   async createAutomationRun(params: {
     strategy: string;
@@ -405,6 +465,21 @@ export class AutomationRepository {
         createdAt: true,
         updatedAt: true,
         symbol: { select: { ticker: true } },
+        order: {
+          select: {
+            stopLossPrice: true,
+            takeProfitPrice: true,
+            note: true,
+            signal: {
+              select: {
+                stopLoss: true,
+                targetPrice: true,
+                reason: true,
+              },
+            },
+            fill: { select: { price: true } },
+          },
+        },
       },
     });
 
@@ -417,8 +492,51 @@ export class AutomationRepository {
       status: row.status,
       reason: row.reason,
       orderId: row.orderId,
+      stopLossPrice: this.resolveExecutionStopLoss(row.order),
+      takeProfitPrice: this.resolveExecutionTakeProfit(row.order),
+      fillPrice: row.order?.fill?.price ? Number(row.order.fill.price) : null,
+      tradeReason:
+        row.order?.signal?.reason?.trim() ||
+        row.order?.note?.trim() ||
+        null,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     }));
+  }
+
+  private resolveExecutionStopLoss(
+    order: {
+      stopLossPrice: Prisma.Decimal | null;
+      signal: { stopLoss: Prisma.Decimal | null } | null;
+    } | null,
+  ): number | null {
+    if (!order) {
+      return null;
+    }
+    if (order.stopLossPrice) {
+      return Number(order.stopLossPrice);
+    }
+    if (order.signal?.stopLoss) {
+      return Number(order.signal.stopLoss);
+    }
+    return null;
+  }
+
+  private resolveExecutionTakeProfit(
+    order: {
+      takeProfitPrice: Prisma.Decimal | null;
+      signal: { targetPrice: Prisma.Decimal | null } | null;
+    } | null,
+  ): number | null {
+    if (!order) {
+      return null;
+    }
+    if (order.takeProfitPrice) {
+      return Number(order.takeProfitPrice);
+    }
+    if (order.signal?.targetPrice) {
+      return Number(order.signal.targetPrice);
+    }
+    return null;
   }
 }

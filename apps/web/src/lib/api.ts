@@ -29,7 +29,7 @@ function getDevUserEmail(): string {
 }
 
 type RequestOptions = {
-  method?: "GET" | "POST";
+  method?: "GET" | "POST" | "PATCH";
   body?: unknown;
 };
 
@@ -78,6 +78,13 @@ export function apiPost<TResponse, TBody = unknown>(
   return request<TResponse>(path, { method: "POST", body });
 }
 
+export function apiPatch<TResponse, TBody = unknown>(
+  path: string,
+  body?: TBody,
+): Promise<TResponse> {
+  return request<TResponse>(path, { method: "PATCH", body });
+}
+
 export type MarketSummaryItem = {
   symbol: string;
   close: number;
@@ -99,9 +106,16 @@ export type DailyBar = {
 export type PortfolioSummary = {
   userEmail: string;
   currency: string;
+  startingCash: number;
   cashBalance: number;
   positionsValue: number;
   totalEquity: number;
+  totalReturn: number;
+  totalReturnPct: number | null;
+  cashPct: number | null;
+  investedPct: number | null;
+  positionCount: number;
+  positionsWithoutStop: number;
   unrealizedPnl: number;
   realizedPnl: number;
   asOf: string | null;
@@ -112,11 +126,47 @@ export type PortfolioPosition = {
   symbol: string;
   quantity: number;
   averageCost: number;
+  costBasis: number | null;
   currentPrice: number | null;
   marketValue: number | null;
   unrealizedPnl: number | null;
+  pctGain: number | null;
+  weightPct: number | null;
+  daysHeld: number | null;
   realizedPnl: number;
+  stopLossPrice: number | null;
+  takeProfitPrice: number | null;
+  pctToStop: number | null;
+  pctToTarget: number | null;
+  linkedOrderId: string | null;
+  priceSource: "H1" | "D1" | null;
   asOf: string | null;
+};
+
+export type PortfolioSnapshot = {
+  asOf: string;
+  cashBalance: number;
+  positionsValue: number;
+  totalEquity: number;
+  unrealizedPnl: number;
+  realizedPnl: number;
+};
+
+export type PortfolioView = {
+  summary: PortfolioSummary;
+  positions: PortfolioPosition[];
+};
+
+export type UpdateOrderLevelsBody = {
+  stopLossPrice?: number;
+  takeProfitPrice?: number;
+};
+
+export type UpdateOrderLevelsResponse = {
+  userEmail: string;
+  orderId: string;
+  stopLossPrice: number | null;
+  takeProfitPrice: number | null;
 };
 
 export type OrderSide = "BUY" | "SELL";
@@ -139,7 +189,17 @@ export type OrderListItem = {
   source: TradeSource;
   note: string | null;
   fillPrice: number | null;
+  stopLossPrice: number | null;
+  takeProfitPrice: number | null;
   symbolUniverseType: UniverseType;
+  tradeRationale: {
+    strategyName: string | null;
+    reason: string;
+    confidence: number | null;
+    entryPrice: number | null;
+    stopLoss: number | null;
+    targetPrice: number | null;
+  } | null;
 };
 
 export type PlaceOrderBody = {
@@ -206,6 +266,24 @@ export type AutomationRunListItem = {
   notes: string | null;
 };
 
+export type AutomationRunResult = {
+  userEmail: string;
+  runId: string;
+  strategy: string;
+  totalSignals: number;
+  placed: number;
+  duplicateSkipped: number;
+  rejectedRisk: number;
+  failed: number;
+  status: "SUCCESS" | "FAILED";
+};
+
+export type ExecuteActiveSignalsBody = {
+  strategyName: StrategyName;
+  quantityPerSignal?: number;
+  signalIds?: string[];
+};
+
 export type AutomationRunSignal = {
   executionId: string;
   signalKey: string;
@@ -214,6 +292,10 @@ export type AutomationRunSignal = {
   status: AutomationSignalStatus;
   reason: string | null;
   orderId: string | null;
+  stopLossPrice: number | null;
+  takeProfitPrice: number | null;
+  fillPrice: number | null;
+  tradeReason: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -367,6 +449,28 @@ export function getSymbolHourlyBars(
   );
 }
 
+export type TradingViewChartSymbol = {
+  ticker: string;
+  exchange: string;
+  tradingViewSymbol: string;
+};
+
+export function getTradingViewChartSymbol(
+  symbol: string,
+): Promise<TradingViewChartSymbol> {
+  return apiGet<TradingViewChartSymbol>(
+    `/market-data/${encodeURIComponent(symbol.trim())}/tradingview`,
+  );
+}
+
+export function getPortfolio(): Promise<PortfolioView> {
+  return apiGet<PortfolioView>("/portfolio");
+}
+
+export function getPortfolioHistory(limit = 30): Promise<PortfolioSnapshot[]> {
+  return apiGet<PortfolioSnapshot[]>(`/portfolio/history?limit=${limit}`);
+}
+
 export function getPortfolioSummary(): Promise<PortfolioSummary> {
   return apiGet<PortfolioSummary>("/portfolio/summary");
 }
@@ -409,6 +513,16 @@ export function cancelOrder(orderId: string): Promise<CancelOrderResponse> {
   return apiPost<CancelOrderResponse>(`/orders/${orderId}/cancel`);
 }
 
+export function updateOrderLevels(
+  orderId: string,
+  body: UpdateOrderLevelsBody,
+): Promise<UpdateOrderLevelsResponse> {
+  return apiPatch<UpdateOrderLevelsResponse, UpdateOrderLevelsBody>(
+    `/orders/${encodeURIComponent(orderId.trim())}/levels`,
+    body,
+  );
+}
+
 export function listAutomationRuns(): Promise<AutomationRunListItem[]> {
   return apiGet<AutomationRunListItem[]>("/automation/runs");
 }
@@ -417,6 +531,15 @@ export function triggerAutomationRun(
   body: TriggerAutomationRunBody,
 ): Promise<unknown> {
   return apiPost<unknown, TriggerAutomationRunBody>("/automation/runs", body);
+}
+
+export function executeActiveSignals(
+  body: ExecuteActiveSignalsBody,
+): Promise<AutomationRunResult> {
+  return apiPost<AutomationRunResult, ExecuteActiveSignalsBody>(
+    "/automation/runs/from-active-signals",
+    body,
+  );
 }
 
 export function listAutomationRunSignals(

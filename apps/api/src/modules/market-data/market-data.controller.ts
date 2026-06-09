@@ -146,6 +146,11 @@ export class MarketDataController {
     return this.marketDataService.testConnection();
   }
 
+  @Get(':symbol/tradingview')
+  async resolveTradingViewSymbol(@Param('symbol') symbol: string) {
+    return this.marketDataService.resolveTradingViewChartSymbol(symbol);
+  }
+
   @Get(':symbol/hourly-bars')
   async getHourlyBars(
     @Param('symbol') symbol: string,

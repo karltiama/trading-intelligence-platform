@@ -65,6 +65,14 @@ export type AttributedOrderListItem = {
   takeProfitPrice: number | null;
   fillPrice: number | null;
   symbolUniverseType: UniverseType;
+  tradeRationale: {
+    strategyName: string | null;
+    reason: string;
+    confidence: number | null;
+    entryPrice: number | null;
+    stopLoss: number | null;
+    targetPrice: number | null;
+  } | null;
 };
 
 export type StopSuggestion = {
@@ -292,6 +300,32 @@ export class OrdersService {
     return {
       userEmail,
       ...canceled,
+    };
+  }
+
+  async updateOrderLevels(
+    orderId: string,
+    input: {
+      stopLossPrice?: number;
+      takeProfitPrice?: number;
+    },
+    userEmail: string,
+    accountId?: string,
+  ): Promise<{
+    userEmail: string;
+    orderId: string;
+    stopLossPrice: number | null;
+    takeProfitPrice: number | null;
+  }> {
+    const updated = await this.paperTradingService.updateOrderLevels(
+      orderId,
+      input,
+      userEmail,
+      accountId,
+    );
+    return {
+      userEmail,
+      ...updated,
     };
   }
 

@@ -334,4 +334,51 @@ describe('PaperTradingService', () => {
       }),
     );
   });
+
+  it('links AUTOMATION orders to scanner signal when signalId is provided', async () => {
+    (repository.resolveAccountForUser as jest.Mock).mockResolvedValue({
+      id: 'acct-1',
+      startingCash: new Prisma.Decimal(100000),
+      cashBalance: new Prisma.Decimal(1000),
+      currency: 'USD',
+    });
+    (repository.findSymbolQuote as jest.Mock).mockResolvedValue({
+      symbolId: 'sym-1',
+      ticker: 'AAPL',
+      latestClose: new Prisma.Decimal(100),
+    });
+    (repository.findSignalSymbolLink as jest.Mock).mockResolvedValue({
+      id: 'sig-1',
+      symbolId: 'sym-1',
+    });
+    (repository.findPosition as jest.Mock).mockResolvedValue(null);
+    (repository.createFilledOrder as jest.Mock).mockResolvedValue({
+      orderId: 'ord-1',
+      filledAt: new Date(),
+    });
+    (repository.updateAccountCash as jest.Mock).mockResolvedValue(undefined);
+    (repository.upsertPosition as jest.Mock).mockResolvedValue(undefined);
+
+    const result = await service.placeMarketOrder(
+      {
+        symbol: 'AAPL',
+        side: 'BUY',
+        quantity: 1,
+        source: TradeSource.AUTOMATION,
+        signalId: 'sig-1',
+        note: '[TREND_PULLBACK] confidence=85 Strong setup.',
+      },
+      'paper-spec@local.test',
+    );
+
+    expect(result.signalId).toBe('sig-1');
+    expect(result.note).toContain('TREND_PULLBACK');
+    expect(repository.createFilledOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: TradeSource.AUTOMATION,
+        signalId: 'sig-1',
+        note: '[TREND_PULLBACK] confidence=85 Strong setup.',
+      }),
+    );
+  });
 });

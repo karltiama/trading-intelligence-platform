@@ -5,10 +5,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { MarketStateCard } from "@/components/dashboard/market-state-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   addTrackedSymbol,
+  executeActiveSignals,
   getMarketState,
   listScanHistory,
   listOrders,
@@ -136,6 +138,9 @@ export default function SignalsPage(): React.JSX.Element {
   const [marketState, setMarketState] = useState<MarketStateResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isScanning, setIsScanning] = useState(false);
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [quantityPerSignal, setQuantityPerSignal] = useState("1");
+  const [executeMessage, setExecuteMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [scanHistory, setScanHistory] = useState<ScanHistoryItem[]>([]);
   const [watchlistBusyBySymbol, setWatchlistBusyBySymbol] = useState<
@@ -197,7 +202,8 @@ export default function SignalsPage(): React.JSX.Element {
   const ordersBySignalId = useMemo(() => {
     const map = new Map<string, OrderListItem[]>();
     for (const order of orders) {
-      if (!order.signalId || order.source !== "SIGNAL") continue;
+      if (!order.signalId) continue;
+      if (order.source !== "SIGNAL" && order.source !== "AUTOMATION") continue;
       const list = map.get(order.signalId) ?? [];
       list.push(order);
       map.set(order.signalId, list);
@@ -229,6 +235,7 @@ export default function SignalsPage(): React.JSX.Element {
   async function handleScan() {
     setIsScanning(true);
     setError(null);
+    setExecuteMessage(null);
     try {
       const summary = await scanSignals(selectedStrategy);
       setScanSummary(summary);
@@ -258,6 +265,59 @@ export default function SignalsPage(): React.JSX.Element {
       : selectedStrategy === "RELATIVE_STRENGTH_BREAKOUT"
         ? "Relative Strength Breakout"
         : "Oversold Bounce";
+
+  async function handleExecuteActiveSignals() {
+    if (sortedSignals.length === 0) {
+      return;
+    }
+
+    const quantity = Number(quantityPerSignal);
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      setError("Quantity per signal must be a positive whole number.");
+      return;
+    }
+
+    const guidanceHint = marketStateStrategyHint(marketState, selectedStrategy);
+    const confirmed = window.confirm(
+      [
+        `Execute ${sortedSignals.length} active ${strategyLabel} signal(s)?`,
+        `Each order: BUY ${quantity} share(s) via paper trading.`,
+        guidanceHint ?? "",
+        "Proceed?",
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setIsExecuting(true);
+    setError(null);
+    setExecuteMessage(null);
+    try {
+      const result = await executeActiveSignals({
+        strategyName: selectedStrategy,
+        quantityPerSignal: quantity,
+        signalIds: sortedSignals.map((signal) => signal.id),
+      });
+      setExecuteMessage(
+        `Automation run ${result.runId.slice(0, 8)}…: placed ${result.placed}/${result.totalSignals}, ` +
+          `risk rejected ${result.rejectedRisk}, failed ${result.failed}.`,
+      );
+      try {
+        setOrders(await listOrders({ limit: 100 }));
+      } catch {
+        setOrders([]);
+      }
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error ? err.message : "Failed to execute active signals.",
+      );
+    } finally {
+      setIsExecuting(false);
+    }
+  }
 
   async function handleAddToWatchlist(symbol: string) {
     const ticker = symbol.trim().toUpperCase();
@@ -563,17 +623,50 @@ export default function SignalsPage(): React.JSX.Element {
       </Card>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <CardTitle className="text-base">Active Signals</CardTitle>
+          {!isLoading && sortedSignals.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                Qty each
+                <Input
+                  type="number"
+                  min={1}
+                  step={1}
+                  className="h-8 w-20"
+                  value={quantityPerSignal}
+                  onChange={(event) => setQuantityPerSignal(event.target.value)}
+                  disabled={isExecuting}
+                />
+              </label>
+              <Button
+                size="sm"
+                onClick={() => void handleExecuteActiveSignals()}
+                disabled={isExecuting}
+              >
+                {isExecuting
+                  ? "Executing..."
+                  : `Execute ${sortedSignals.length} Signal${sortedSignals.length === 1 ? "" : "s"}`}
+              </Button>
+              <Button size="sm" variant="outline" asChild>
+                <Link href="/dashboard/automation">View runs</Link>
+              </Button>
+            </div>
+          ) : null}
         </CardHeader>
         <CardContent className="space-y-3">
+          {executeMessage ? (
+            <p className="rounded-md border border-emerald-300 bg-emerald-50 p-2 text-sm text-emerald-900">
+              {executeMessage}
+            </p>
+          ) : null}
           {isLoading ? (
             <p className="text-sm text-muted-foreground">Loading signals...</p>
           ) : null}
 
           {!isLoading && sortedSignals.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No active trend pullback signals yet. Run scan to generate candidates.
+              No active {strategyLabel.toLowerCase()} signals yet. Run scan to generate candidates.
             </p>
           ) : null}
 

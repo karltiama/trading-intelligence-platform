@@ -98,6 +98,46 @@ describe('OrdersController (e2e)', () => {
     expect(audit).not.toBeNull();
   });
 
+  it('updates stop and target on a filled BUY order', async () => {
+    const placed = await request(app.getHttpServer())
+      .post('/orders')
+      .set('x-user-email', userEmail)
+      .send({
+        symbol: ticker,
+        side: 'BUY',
+        quantity: 1,
+        stopLossPrice: 99,
+        takeProfitPrice: 104,
+        source: 'MANUAL',
+      })
+      .expect(201);
+
+    const orderId = placed.body.orderId as string;
+
+    const updated = await request(app.getHttpServer())
+      .patch(`/orders/${orderId}/levels`)
+      .set('x-user-email', userEmail)
+      .send({
+        stopLossPrice: 98,
+        takeProfitPrice: 106,
+      })
+      .expect(200);
+
+    expect(updated.body.orderId).toBe(orderId);
+    expect(updated.body.stopLossPrice).toBe(98);
+    expect(updated.body.takeProfitPrice).toBe(106);
+
+    const listed = await request(app.getHttpServer())
+      .get('/orders')
+      .set('x-user-email', userEmail)
+      .expect(200);
+    const row = listed.body.find(
+      (item: { orderId: string }) => item.orderId === orderId,
+    );
+    expect(row.stopLossPrice).toBe(98);
+    expect(row.takeProfitPrice).toBe(106);
+  });
+
   it('rejects cancel for immediately filled market order', async () => {
     const placed = await request(app.getHttpServer())
       .post('/orders')

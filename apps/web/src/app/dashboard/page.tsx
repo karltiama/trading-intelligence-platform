@@ -16,8 +16,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   getMarketSummary,
   getMarketState,
-  getPortfolioPositions,
-  getPortfolioSummary,
+  getPortfolio,
+  getPortfolioHistory,
   scanSignals,
   type MarketStateResponse,
   type MarketSummaryItem,
@@ -25,6 +25,8 @@ import {
   type PortfolioSummary,
   type ScanSignalsSummary,
 } from "@/lib/api";
+import { fmtPct, pctGainClass } from "@/lib/order-levels";
+import { cn } from "@/lib/utils";
 
 const usd = (value: number) =>
   new Intl.NumberFormat("en-US", {
@@ -38,6 +40,7 @@ export default function DashboardPage(): React.JSX.Element {
     null,
   );
   const [positions, setPositions] = useState<PortfolioPosition[]>([]);
+  const [dailyEquityChange, setDailyEquityChange] = useState<number | null>(null);
   const [marketSummary, setMarketSummary] = useState<MarketSummaryItem[]>([]);
   const [marketState, setMarketState] = useState<MarketStateResponse | null>(null);
   const [scannerSummary, setScannerSummary] = useState<ScanSignalsSummary | null>(null);
@@ -58,15 +61,21 @@ export default function DashboardPage(): React.JSX.Element {
       setError(null);
 
       try {
-        const [summaryRes, positionsRes, marketRes, marketStateRes] = await Promise.all([
-          getPortfolioSummary(),
-          getPortfolioPositions(),
-          getMarketSummary(),
-          getMarketState().catch(() => null),
-        ]);
+        const [portfolioRes, historyRes, marketRes, marketStateRes] =
+          await Promise.all([
+            getPortfolio(),
+            getPortfolioHistory(2).catch(() => []),
+            getMarketSummary(),
+            getMarketState().catch(() => null),
+          ]);
         if (!isMounted) return;
-        setPortfolioSummary(summaryRes);
-        setPositions(positionsRes);
+        setPortfolioSummary(portfolioRes.summary);
+        setPositions(portfolioRes.positions);
+        setDailyEquityChange(
+          historyRes.length >= 2
+            ? historyRes[0].totalEquity - historyRes[1].totalEquity
+            : null,
+        );
         setMarketSummary(marketRes);
         setMarketState(marketStateRes);
       } catch (err: unknown) {
@@ -103,16 +112,6 @@ export default function DashboardPage(): React.JSX.Element {
     );
     return match ? match.symbol : marketSummary[0].symbol;
   }, [marketSummary, chartSymbolSelection]);
-
-  const openPositions = useMemo(
-    () => positions.filter((position) => position.quantity > 0).length,
-    [positions],
-  );
-
-  const trackedSymbols = useMemo(() => {
-    const unique = new Set(marketSummary.map((item) => item.symbol));
-    return unique.size;
-  }, [marketSummary]);
 
   const topScannerRows = useMemo(
     () => (scannerSummary?.scanned ?? []).slice(0, 3),
@@ -217,62 +216,108 @@ export default function DashboardPage(): React.JSX.Element {
         ) : null}
 
         {!isLoading && !error ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Cash
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold tracking-tight">
-                {portfolioSummary ? usd(portfolioSummary.cashBalance) : "N/A"}
-              </CardContent>
-            </Card>
+          <>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm text-muted-foreground">
+                Live paper portfolio metrics
+              </p>
+              <Button size="sm" variant="outline" asChild>
+                <Link href="/dashboard/portfolio">View Portfolio</Link>
+              </Button>
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Equity
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="text-2xl font-semibold tracking-tight">
+                  {portfolioSummary ? usd(portfolioSummary.totalEquity) : "N/A"}
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Equity
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold tracking-tight">
-                {portfolioSummary ? usd(portfolioSummary.totalEquity) : "N/A"}
-              </CardContent>
-            </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Total return
+                  </CardTitle>
+                </CardHeader>
+                <CardContent
+                  className={cn(
+                    "text-2xl font-semibold tracking-tight",
+                    pctGainClass(portfolioSummary?.totalReturn ?? null),
+                  )}
+                >
+                  {portfolioSummary ? usd(portfolioSummary.totalReturn) : "N/A"}
+                  {portfolioSummary ? (
+                    <span className="ml-2 text-base font-medium">
+                      {fmtPct(portfolioSummary.totalReturnPct)}
+                    </span>
+                  ) : null}
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Unrealized PnL
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold tracking-tight">
-                {portfolioSummary ? usd(portfolioSummary.unrealizedPnl) : "N/A"}
-              </CardContent>
-            </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Daily equity change
+                  </CardTitle>
+                </CardHeader>
+                <CardContent
+                  className={cn(
+                    "text-2xl font-semibold tracking-tight",
+                    pctGainClass(dailyEquityChange),
+                  )}
+                >
+                  {dailyEquityChange === null ? "—" : usd(dailyEquityChange)}
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Open Positions
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold tracking-tight">
-                {openPositions}
-              </CardContent>
-            </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Unrealized P&amp;L
+                  </CardTitle>
+                </CardHeader>
+                <CardContent
+                  className={cn(
+                    "text-2xl font-semibold tracking-tight",
+                    pctGainClass(portfolioSummary?.unrealizedPnl ?? null),
+                  )}
+                >
+                  {portfolioSummary ? usd(portfolioSummary.unrealizedPnl) : "N/A"}
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Tracked Symbols
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold tracking-tight">
-                {trackedSymbols}
-              </CardContent>
-            </Card>
-          </div>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Realized P&amp;L
+                  </CardTitle>
+                </CardHeader>
+                <CardContent
+                  className={cn(
+                    "text-2xl font-semibold tracking-tight",
+                    pctGainClass(portfolioSummary?.realizedPnl ?? null),
+                  )}
+                >
+                  {portfolioSummary ? usd(portfolioSummary.realizedPnl) : "N/A"}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Open positions
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="text-2xl font-semibold tracking-tight">
+                  {portfolioSummary ? portfolioSummary.positionCount : "N/A"}
+                </CardContent>
+              </Card>
+            </div>
+          </>
         ) : null}
 
         {!isLoading &&

@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { TradeSource } from '@prisma/client';
+import { StrategyName, TradeSource } from '@prisma/client';
 import { AutomationRepository } from './automation.repository';
 import {
   AutomationService,
@@ -20,6 +20,7 @@ describe('AutomationService', () => {
     markSignalExecutionPlaced: jest.fn(),
     markSignalExecutionRejected: jest.fn(),
     markSignalExecutionFailed: jest.fn(),
+    findActiveSignalsForExecution: jest.fn(),
   } as unknown as AutomationRepository;
 
   const paperTradingService = {
@@ -243,5 +244,84 @@ describe('AutomationService', () => {
     expect(
       automationRepository.markSignalExecutionRejected,
     ).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects executeFromActiveSignals when no active signals exist', async () => {
+    (
+      automationRepository.findActiveSignalsForExecution as jest.Mock
+    ).mockResolvedValue([]);
+
+    await expect(
+      service.executeFromActiveSignals({
+        strategyName: StrategyName.TREND_PULLBACK,
+        quantityPerSignal: 1,
+        userEmail: 'automation-spec@local.test',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('maps active signals into automation run inputs', async () => {
+    const signalDate = new Date('2026-04-25T00:00:00.000Z');
+    (
+      automationRepository.findActiveSignalsForExecution as jest.Mock
+    ).mockResolvedValue([
+      {
+        id: 'sig-1',
+        symbolId: 'sym-1',
+        ticker: 'AAPL',
+        signalDate,
+        strategyName: StrategyName.TREND_PULLBACK,
+        reason: 'Trend pullback setup qualifies.',
+        confidence: 85,
+        entryPrice: 100,
+        stopLoss: 95,
+        targetPrice: 110,
+      },
+    ]);
+    (
+      automationRepository.createSignalExecutionAttempt as jest.Mock
+    ).mockResolvedValue({ id: 'exec-1' });
+    (paperTradingService.placeMarketOrder as jest.Mock).mockResolvedValue({
+      orderId: 'ord-1',
+      status: 'FILLED',
+      symbol: 'AAPL',
+      side: 'BUY',
+      quantity: 2,
+      fillPrice: 100,
+      fillNotional: 200,
+      cashBalance: 99800,
+      signalId: null,
+      source: TradeSource.AUTOMATION,
+      note: null,
+    });
+
+    const result = await service.executeFromActiveSignals({
+      strategyName: StrategyName.TREND_PULLBACK,
+      quantityPerSignal: 2,
+      userEmail: 'automation-spec@local.test',
+    });
+
+    expect(result.placed).toBe(1);
+    expect(result.totalSignals).toBe(1);
+    expect(
+      automationRepository.findActiveSignalsForExecution,
+    ).toHaveBeenCalledWith({
+      strategyName: StrategyName.TREND_PULLBACK,
+      signalIds: undefined,
+    });
+    expect(paperTradingService.placeMarketOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        symbol: 'AAPL',
+        side: 'BUY',
+        quantity: 2,
+        source: TradeSource.AUTOMATION,
+        signalId: 'sig-1',
+        note: expect.stringContaining('TREND_PULLBACK'),
+        stopLossPrice: 95,
+        takeProfitPrice: 110,
+      }),
+      'automation-spec@local.test',
+      undefined,
+    );
   });
 });

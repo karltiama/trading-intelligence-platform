@@ -45,6 +45,15 @@ export type PaperOrderState = {
   status: PaperOrderStatus;
 };
 
+export type OrderTradeRationale = {
+  strategyName: string | null;
+  reason: string;
+  confidence: number | null;
+  entryPrice: number | null;
+  stopLoss: number | null;
+  targetPrice: number | null;
+};
+
 export type PaperOrderListRow = {
   id: string;
   symbol: string;
@@ -62,6 +71,7 @@ export type PaperOrderListRow = {
   takeProfitPrice: Prisma.Decimal | null;
   fillPrice: Prisma.Decimal | null;
   symbolUniverseType: UniverseType;
+  tradeRationale: OrderTradeRationale | null;
 };
 
 export type PaperOrderListFilters = {
@@ -80,7 +90,17 @@ export type PaperPositionListRow = {
   quantity: Prisma.Decimal;
   averageCost: Prisma.Decimal;
   realizedPnl: Prisma.Decimal;
+  openedAt: Date;
   updatedAt: Date;
+};
+
+export type PaperAccountSnapshotRow = {
+  asOf: Date;
+  cashBalance: Prisma.Decimal;
+  positionsValue: Prisma.Decimal;
+  totalEquity: Prisma.Decimal;
+  unrealizedPnl: Prisma.Decimal;
+  realizedPnl: Prisma.Decimal;
 };
 
 export type LatestPriceRow = {
@@ -403,6 +423,123 @@ export class PaperTradingRepository {
     });
   }
 
+  async findOrderLevelsRow(
+    accountId: string,
+    orderId: string,
+  ): Promise<{
+    id: string;
+    status: PaperOrderStatus;
+    side: PaperOrderSide;
+    symbolId: string;
+    stopLossPrice: Prisma.Decimal | null;
+    takeProfitPrice: Prisma.Decimal | null;
+    fillPrice: Prisma.Decimal | null;
+  } | null> {
+    const row = await this.prisma.paperOrder.findFirst({
+      where: { id: orderId, accountId },
+      select: {
+        id: true,
+        status: true,
+        side: true,
+        symbolId: true,
+        stopLossPrice: true,
+        takeProfitPrice: true,
+        fill: { select: { price: true } },
+      },
+    });
+    if (!row) {
+      return null;
+    }
+    return {
+      id: row.id,
+      status: row.status,
+      side: row.side,
+      symbolId: row.symbolId,
+      stopLossPrice: row.stopLossPrice,
+      takeProfitPrice: row.takeProfitPrice,
+      fillPrice: row.fill?.price ?? null,
+    };
+  }
+
+  async updateFilledBuyOrderLevels(
+    accountId: string,
+    orderId: string,
+    data: {
+      stopLossPrice: Prisma.Decimal | null;
+      takeProfitPrice: Prisma.Decimal | null;
+    },
+  ): Promise<boolean> {
+    const result = await this.prisma.paperOrder.updateMany({
+      where: {
+        id: orderId,
+        accountId,
+        status: 'FILLED',
+        side: 'BUY',
+      },
+      data: {
+        stopLossPrice: data.stopLossPrice,
+        takeProfitPrice: data.takeProfitPrice,
+        updatedAt: new Date(),
+      },
+    });
+    return result.count > 0;
+  }
+
+  async findLatestFilledBuyOrdersForSymbols(
+    accountId: string,
+    symbolIds: string[],
+  ): Promise<
+    Record<
+      string,
+      {
+        orderId: string;
+        stopLossPrice: number | null;
+        takeProfitPrice: number | null;
+      }
+    >
+  > {
+    if (symbolIds.length === 0) {
+      return {};
+    }
+    const rows = await this.prisma.paperOrder.findMany({
+      where: {
+        accountId,
+        symbolId: { in: symbolIds },
+        side: 'BUY',
+        status: 'FILLED',
+      },
+      orderBy: [{ filledAt: 'desc' }, { id: 'desc' }],
+      select: {
+        id: true,
+        symbolId: true,
+        stopLossPrice: true,
+        takeProfitPrice: true,
+      },
+    });
+
+    const bySymbol: Record<
+      string,
+      {
+        orderId: string;
+        stopLossPrice: number | null;
+        takeProfitPrice: number | null;
+      }
+    > = {};
+    for (const row of rows) {
+      if (bySymbol[row.symbolId]) {
+        continue;
+      }
+      bySymbol[row.symbolId] = {
+        orderId: row.id,
+        stopLossPrice: row.stopLossPrice ? Number(row.stopLossPrice) : null,
+        takeProfitPrice: row.takeProfitPrice
+          ? Number(row.takeProfitPrice)
+          : null,
+      };
+    }
+    return bySymbol;
+  }
+
   async cancelNewOrderForAccount(
     accountId: string,
     orderId: string,
@@ -460,6 +597,16 @@ export class PaperTradingRepository {
         canceledAt: true,
         symbol: { select: { ticker: true, universeType: true } },
         fill: { select: { price: true } },
+        signal: {
+          select: {
+            strategyName: true,
+            reason: true,
+            confidence: true,
+            entryPrice: true,
+            stopLoss: true,
+            targetPrice: true,
+          },
+        },
       },
     });
 
@@ -480,7 +627,42 @@ export class PaperTradingRepository {
       takeProfitPrice: row.takeProfitPrice,
       fillPrice: row.fill?.price ?? null,
       symbolUniverseType: row.symbol.universeType,
+      tradeRationale: this.toOrderTradeRationale(row.signal, row.note),
     }));
+  }
+
+  private toOrderTradeRationale(
+    signal: {
+      strategyName: string;
+      reason: string;
+      confidence: number | null;
+      entryPrice: Prisma.Decimal | null;
+      stopLoss: Prisma.Decimal | null;
+      targetPrice: Prisma.Decimal | null;
+    } | null,
+    note: string | null,
+  ): OrderTradeRationale | null {
+    if (signal) {
+      return {
+        strategyName: signal.strategyName,
+        reason: signal.reason,
+        confidence: signal.confidence,
+        entryPrice: signal.entryPrice ? Number(signal.entryPrice) : null,
+        stopLoss: signal.stopLoss ? Number(signal.stopLoss) : null,
+        targetPrice: signal.targetPrice ? Number(signal.targetPrice) : null,
+      };
+    }
+    if (note?.trim()) {
+      return {
+        strategyName: null,
+        reason: note.trim(),
+        confidence: null,
+        entryPrice: null,
+        stopLoss: null,
+        targetPrice: null,
+      };
+    }
+    return null;
   }
 
   async listPositions(accountId: string): Promise<PaperPositionListRow[]> {
@@ -492,6 +674,7 @@ export class PaperTradingRepository {
         quantity: true,
         averageCost: true,
         realizedPnl: true,
+        openedAt: true,
         updatedAt: true,
         symbol: { select: { ticker: true } },
       },
@@ -503,8 +686,79 @@ export class PaperTradingRepository {
       quantity: row.quantity,
       averageCost: row.averageCost,
       realizedPnl: row.realizedPnl,
+      openedAt: row.openedAt,
       updatedAt: row.updatedAt,
     }));
+  }
+
+  async listAccountSnapshots(
+    accountId: string,
+    limit = 30,
+  ): Promise<PaperAccountSnapshotRow[]> {
+    const rows = await this.prisma.paperAccountSnapshot.findMany({
+      where: { accountId },
+      orderBy: { asOf: 'desc' },
+      take: limit,
+      select: {
+        asOf: true,
+        cashBalance: true,
+        positionsValue: true,
+        totalEquity: true,
+        unrealizedPnl: true,
+        realizedPnl: true,
+      },
+    });
+    return rows;
+  }
+
+  async upsertSnapshotForUtcDay(
+    accountId: string,
+    snapshot: {
+      cashBalance: Prisma.Decimal;
+      positionsValue: Prisma.Decimal;
+      totalEquity: Prisma.Decimal;
+      unrealizedPnl: Prisma.Decimal;
+      realizedPnl: Prisma.Decimal;
+      asOf?: Date;
+    },
+  ): Promise<void> {
+    const asOf = snapshot.asOf ?? new Date();
+    const dayStart = new Date(asOf);
+    dayStart.setUTCHours(0, 0, 0, 0);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
+
+    const existing = await this.prisma.paperAccountSnapshot.findFirst({
+      where: {
+        accountId,
+        asOf: { gte: dayStart, lt: dayEnd },
+      },
+      select: { id: true },
+    });
+
+    const data = {
+      cashBalance: snapshot.cashBalance,
+      positionsValue: snapshot.positionsValue,
+      totalEquity: snapshot.totalEquity,
+      unrealizedPnl: snapshot.unrealizedPnl,
+      realizedPnl: snapshot.realizedPnl,
+      asOf,
+    };
+
+    if (existing) {
+      await this.prisma.paperAccountSnapshot.update({
+        where: { id: existing.id },
+        data,
+      });
+      return;
+    }
+
+    await this.prisma.paperAccountSnapshot.create({
+      data: {
+        accountId,
+        ...data,
+      },
+    });
   }
 
   async findLatestPricesForSymbols(

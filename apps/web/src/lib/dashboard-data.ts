@@ -20,7 +20,7 @@ export const navItems: NavItem[] = [
   { title: "Orders", href: "/dashboard/orders", icon: ListOrdered },
   { title: "Automation", href: "/dashboard/automation", icon: PlayCircle },
   { title: "Guardrails", href: "/dashboard/guardrails", icon: Shield },
-  { title: "Portfolio", href: "/dashboard/orders", icon: Briefcase },
+  { title: "Portfolio", href: "/dashboard/portfolio", icon: Briefcase },
 ];
 
 export type Direction = "up" | "down" | "flat";
@@ -34,7 +34,7 @@ export type KpiCard = {
   hint?: string;
 };
 
-// TODO: Replace with portfolio metrics in later phase.
+/** @deprecated Use live portfolio data from GET /portfolio instead. */
 export const kpiCards: KpiCard[] = [
   {
     id: "portfolio-value",

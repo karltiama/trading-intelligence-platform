@@ -5,6 +5,7 @@ import {
   Get,
   Headers,
   Param,
+  Patch,
   Post,
   Query,
 } from '@nestjs/common';
@@ -25,6 +26,11 @@ type PlaceOrderBody = {
   signalId?: string;
   source?: string;
   note?: string;
+};
+
+type UpdateOrderLevelsBody = {
+  stopLossPrice?: number;
+  takeProfitPrice?: number;
 };
 
 @Controller('orders')
@@ -131,6 +137,54 @@ export class OrdersController {
     });
     const accountId = accountIdRaw?.trim() || undefined;
     return this.ordersService.cancelOrder(id, principal.userEmail, accountId);
+  }
+
+  @Patch(':id/levels')
+  updateOrderLevels(
+    @Param('id') orderId: string,
+    @Body() body: UpdateOrderLevelsBody,
+    @Headers('x-user-email') headerUserEmail?: string,
+    @Query('userEmail') queryUserEmail?: string,
+    @Query('accountId') accountIdRaw?: string,
+  ) {
+    const id = orderId.trim();
+    if (!id) {
+      throw new BadRequestException('order id is required.');
+    }
+    if (
+      body.stopLossPrice === undefined &&
+      body.takeProfitPrice === undefined
+    ) {
+      throw new BadRequestException(
+        'at least one of stopLossPrice or takeProfitPrice is required.',
+      );
+    }
+    if (
+      body.stopLossPrice !== undefined &&
+      typeof body.stopLossPrice !== 'number'
+    ) {
+      throw new BadRequestException('stopLossPrice must be a number.');
+    }
+    if (
+      body.takeProfitPrice !== undefined &&
+      typeof body.takeProfitPrice !== 'number'
+    ) {
+      throw new BadRequestException('takeProfitPrice must be a number.');
+    }
+    const principal = this.accountContextService.resolvePrincipal({
+      headerUserEmail,
+      queryUserEmail,
+    });
+    const accountId = accountIdRaw?.trim() || undefined;
+    return this.ordersService.updateOrderLevels(
+      id,
+      {
+        stopLossPrice: body.stopLossPrice,
+        takeProfitPrice: body.takeProfitPrice,
+      },
+      principal.userEmail,
+      accountId,
+    );
   }
 
   @Get()
