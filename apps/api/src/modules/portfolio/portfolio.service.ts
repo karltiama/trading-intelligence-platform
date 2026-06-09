@@ -191,11 +191,18 @@ export class PortfolioService {
     let positionsValue = new Prisma.Decimal(0);
     let unrealizedPnl = new Prisma.Decimal(0);
     let realizedPnl = new Prisma.Decimal(0);
-    let asOf: Date | null = null;
     let positionsWithoutStop = 0;
 
     for (const position of positions) {
       realizedPnl = realizedPnl.add(position.realizedPnl);
+    }
+
+    let marksAsOf: Date | null = null;
+    for (const position of openPositions) {
+      const latest = latestPrices[position.symbolId];
+      if (latest && (!marksAsOf || latest.asOf > marksAsOf)) {
+        marksAsOf = latest.asOf;
+      }
     }
 
     const nowMs = Date.now();
@@ -244,10 +251,6 @@ export class PortfolioService {
         positionsValue = positionsValue.add(marketValue);
         unrealizedPnl = unrealizedPnl.add(unrealized);
 
-        if (!asOf || latest.asOf > asOf) {
-          asOf = latest.asOf;
-        }
-
         return {
           userEmail,
           symbol: position.symbol,
@@ -288,6 +291,9 @@ export class PortfolioService {
           : null,
     }));
 
+    const summaryAsOf =
+      marksAsOf === null ? null : marksAsOf.toISOString();
+
     return {
       accountId: account.id,
       summary: {
@@ -312,7 +318,7 @@ export class PortfolioService {
         positionsWithoutStop,
         unrealizedPnl: unrealizedPnl.toNumber(),
         realizedPnl: realizedPnl.toNumber(),
-        asOf: asOf?.toISOString() ?? null,
+        asOf: summaryAsOf,
       },
       positions: positionsWithWeights,
       snapshotDecimals: {
@@ -321,7 +327,7 @@ export class PortfolioService {
         totalEquity,
         unrealizedPnl,
         realizedPnl,
-        asOf,
+        asOf: marksAsOf,
       },
     };
   }
