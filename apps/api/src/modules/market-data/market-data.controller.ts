@@ -11,10 +11,22 @@ import {
 } from '@nestjs/common';
 import { DEFAULT_SYNC_BAR_LIMIT } from './market-data.constants';
 import type { BarsQueryDto } from './dto/bars-query.dto';
+import type { HourlyBarsQueryDto } from './dto/hourly-bars-query.dto';
+import { H1_MAX_QUERY_LIMIT } from './market-data-hourly.constants';
 import { MarketDataService } from './market-data.service';
 import { SyncApiKeyGuard } from './sync-api-key.guard';
 
 const MAX_SYNC_BAR_LIMIT = 500;
+
+function parseOptionalBoolean(value: string | boolean | undefined): boolean {
+  if (value === undefined) {
+    return false;
+  }
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  return value === 'true' || value === '1';
+}
 
 @Controller('market-data')
 export class MarketDataController {
@@ -70,6 +82,32 @@ export class MarketDataController {
     }
   }
 
+  @Post('sync/hourly')
+  @UseGuards(SyncApiKeyGuard)
+  async syncCoreHourlySymbols() {
+    try {
+      return await this.marketDataService.syncCoreHourlySymbols();
+    } catch (error) {
+      throw this.toSyncHttpException(error);
+    }
+  }
+
+  @Post('sync/hourly/:symbol')
+  @UseGuards(SyncApiKeyGuard)
+  async syncOneSymbolHourly(@Param('symbol') symbol: string) {
+    let barsUpserted: number;
+    try {
+      barsUpserted = await this.marketDataService.syncHourlyBarsForSymbol(symbol);
+    } catch (error) {
+      throw this.toSyncHttpException(error);
+    }
+
+    return {
+      symbol: this.marketDataService.normalizeTicker(symbol),
+      barsUpserted,
+    };
+  }
+
   @Post('sync/:symbol')
   @UseGuards(SyncApiKeyGuard)
   async syncOneSymbol(
@@ -106,6 +144,33 @@ export class MarketDataController {
   @Get('test')
   async testConnection() {
     return this.marketDataService.testConnection();
+  }
+
+  @Get(':symbol/hourly-bars')
+  async getHourlyBars(
+    @Param('symbol') symbol: string,
+    @Query() query: HourlyBarsQueryDto,
+  ) {
+    const limitValue = query.limit;
+    const limit =
+      typeof limitValue === 'string'
+        ? Number.parseInt(limitValue, 10)
+        : limitValue;
+
+    if (limit !== undefined && Number.isNaN(limit)) {
+      throw new BadRequestException('limit must be a valid number.');
+    }
+    if (limit !== undefined && limit > H1_MAX_QUERY_LIMIT) {
+      throw new BadRequestException(
+        `limit must be less than or equal to ${H1_MAX_QUERY_LIMIT}.`,
+      );
+    }
+
+    if (parseOptionalBoolean(query.ensure)) {
+      await this.marketDataService.ensureHourlyBars(symbol);
+    }
+
+    return this.marketDataService.getHourlyBars(symbol, limit ?? 120);
   }
 
   @Get(':symbol/bars')

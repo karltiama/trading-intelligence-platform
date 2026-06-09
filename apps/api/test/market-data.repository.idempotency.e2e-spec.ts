@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Prisma } from '@prisma/client';
+import { H1_TIMEFRAME } from '../src/modules/market-data/market-data-hourly.constants';
 import { MarketDataRepository } from '../src/modules/market-data/market-data.repository';
 import { PrismaService } from '../src/prisma/prisma.service';
 
@@ -66,8 +67,61 @@ describe('MarketDataRepository idempotency (integration)', () => {
     expect(dailyPrices[1].close.toString()).toBe('108');
   });
 
+  it('does not create duplicate H1 Candle rows and prunes older bars', async () => {
+    ticker = `H1IDEMP_${Date.now()}`;
+    const created = await repository.findOrCreateSymbolByTicker(ticker);
+    symbolId = created.id;
+
+    const rows = [
+      {
+        timestamp: new Date('2026-04-23T14:00:00.000Z'),
+        open: new Prisma.Decimal('100.00'),
+        high: new Prisma.Decimal('110.00'),
+        low: new Prisma.Decimal('95.00'),
+        close: new Prisma.Decimal('105.00'),
+        volume: new Prisma.Decimal('1000.00'),
+      },
+      {
+        timestamp: new Date('2026-04-24T15:00:00.000Z'),
+        open: new Prisma.Decimal('106.00'),
+        high: new Prisma.Decimal('112.00'),
+        low: new Prisma.Decimal('101.00'),
+        close: new Prisma.Decimal('108.00'),
+        volume: new Prisma.Decimal('900.00'),
+      },
+    ];
+
+    await repository.upsertHourlyBars(symbolId, rows);
+    await repository.upsertHourlyBars(symbolId, rows);
+
+    const candles = await prisma.candle.findMany({
+      where: { symbolId, timeframe: H1_TIMEFRAME },
+      orderBy: { timestamp: 'asc' },
+      select: { timestamp: true, close: true },
+    });
+
+    expect(candles).toHaveLength(2);
+    expect(candles[0].timestamp.toISOString()).toBe('2026-04-23T14:00:00.000Z');
+    expect(candles[1].timestamp.toISOString()).toBe('2026-04-24T15:00:00.000Z');
+    expect(candles[1].close.toString()).toBe('108');
+
+    const pruned = await repository.pruneHourlyBars(
+      symbolId,
+      new Date('2026-04-24T00:00:00.000Z'),
+    );
+    expect(pruned).toBe(1);
+
+    const remaining = await prisma.candle.findMany({
+      where: { symbolId, timeframe: H1_TIMEFRAME },
+      orderBy: { timestamp: 'asc' },
+    });
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].timestamp.toISOString()).toBe('2026-04-24T15:00:00.000Z');
+  });
+
   afterEach(async () => {
     if (symbolId) {
+      await prisma.candle.deleteMany({ where: { symbolId } });
       await prisma.dailyPrice.deleteMany({ where: { symbolId } });
     }
 

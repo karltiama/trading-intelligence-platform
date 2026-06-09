@@ -4,6 +4,7 @@ import {
   InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
+import { H1_ALPACA_TIMEFRAME } from './market-data-hourly.constants';
 import { FormattedBar, FormattedQuote } from './dto/market-data-response.dto';
 
 type AlpacaBarsResponse = {
@@ -103,6 +104,50 @@ export class AlpacaClient {
         volume: bar.v,
         timestamp: bar.t,
       }));
+  }
+
+  async getHourlyBars(
+    symbol: string,
+    start: Date,
+    end: Date,
+    limit: number,
+  ): Promise<FormattedBar[]> {
+    const encodedSymbol = encodeURIComponent(symbol);
+    const startIso = encodeURIComponent(start.toISOString());
+    const endIso = encodeURIComponent(end.toISOString());
+    const url = `${this.baseUrl}/v2/stocks/bars?symbols=${encodedSymbol}&timeframe=${H1_ALPACA_TIMEFRAME}&start=${startIso}&end=${endIso}&limit=${limit}&adjustment=raw&feed=iex&sort=asc`;
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: this.getHeaders(),
+    });
+
+    if (!response.ok) {
+      const details = await response.text();
+      throw new BadGatewayException(
+        `Alpaca bars request failed (${response.status}): ${details}`,
+      );
+    }
+
+    const payload = (await response.json()) as AlpacaBarsResponse;
+    const barsField = payload.bars;
+    const bars = Array.isArray(barsField)
+      ? barsField
+      : (barsField?.[symbol.toUpperCase()] ?? []);
+
+    this.logger.log(
+      `Fetched ${bars.length} hourly bars for ${symbol.toUpperCase()}.`,
+    );
+
+    return bars.map((bar) => ({
+      symbol: symbol.toUpperCase(),
+      open: bar.o,
+      high: bar.h,
+      low: bar.l,
+      close: bar.c,
+      volume: bar.v,
+      timestamp: bar.t,
+    }));
   }
 
   async getLatestQuote(symbol: string): Promise<FormattedQuote> {
