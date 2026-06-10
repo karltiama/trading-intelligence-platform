@@ -479,6 +479,26 @@ export function getPortfolioPositions(): Promise<PortfolioPosition[]> {
   return apiGet<PortfolioPosition[]>("/portfolio/positions");
 }
 
+export type ClosePositionResponse = {
+  userEmail: string;
+  symbol: string;
+  quantity: number;
+  orderId: string;
+  status: string;
+  fillPrice: number;
+  cashBalance: number;
+};
+
+export function closePosition(
+  symbol: string,
+  body?: { quantity?: number },
+): Promise<ClosePositionResponse> {
+  return apiPost<ClosePositionResponse>(
+    `/portfolio/positions/${encodeURIComponent(symbol.trim().toUpperCase())}/close`,
+    body,
+  );
+}
+
 export function listOrders(params?: {
   signalId?: string;
   limit?: number;

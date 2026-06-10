@@ -286,13 +286,16 @@ export class PaperTradingService {
         'only filled BUY orders support stop/target edits.',
       );
     }
-    if (!existing.fillPrice) {
+    const quote = await this.paperTradingRepository.findSymbolQuote(
+      existing.symbol,
+    );
+    if (!quote?.latestClose) {
       throw new BadRequestException(
-        `Order ${orderId} has no fill price for level validation.`,
+        `No current price available for ${existing.symbol}.`,
       );
     }
 
-    const fillPrice = existing.fillPrice.toNumber();
+    const currentPrice = quote.latestClose.toNumber();
     const stopLossPrice =
       input.stopLossPrice ??
       (existing.stopLossPrice ? existing.stopLossPrice.toNumber() : null);
@@ -305,14 +308,14 @@ export class PaperTradingService {
         'stopLossPrice is required when order has no existing stop.',
       );
     }
-    if (stopLossPrice >= fillPrice) {
+    if (stopLossPrice >= currentPrice) {
       throw new BadRequestException(
-        `stopLossPrice must be below fill price (${fillPrice.toFixed(2)}).`,
+        `stopLossPrice must be below current price (${currentPrice.toFixed(2)}).`,
       );
     }
-    if (takeProfitPrice !== null && takeProfitPrice <= fillPrice) {
+    if (takeProfitPrice !== null && takeProfitPrice <= currentPrice) {
       throw new BadRequestException(
-        `takeProfitPrice must be above fill price (${fillPrice.toFixed(2)}).`,
+        `takeProfitPrice must be above current price (${currentPrice.toFixed(2)}).`,
       );
     }
 

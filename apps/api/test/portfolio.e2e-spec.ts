@@ -5,6 +5,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
+import { PositionManagementService } from '../src/modules/portfolio/position-management.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 describe('PortfolioController (e2e)', () => {
@@ -274,6 +275,98 @@ describe('PortfolioController (e2e)', () => {
         });
       }
     }
+  });
+
+  it('closes a partial position through the close endpoint', async () => {
+    await request(app.getHttpServer())
+      .post('/orders')
+      .set('x-user-email', userEmail)
+      .send({
+        symbol: ticker,
+        side: 'BUY',
+        quantity: 2,
+        stopLossPrice: 95,
+      })
+      .expect(201);
+
+    const closeResponse = await request(app.getHttpServer())
+      .post(`/portfolio/positions/${ticker}/close`)
+      .set('x-user-email', userEmail)
+      .send({ quantity: 1 })
+      .expect(201);
+
+    expect(closeResponse.body.symbol).toBe(ticker);
+    expect(closeResponse.body.quantity).toBe(1);
+
+    const positions = await request(app.getHttpServer())
+      .get('/portfolio/positions')
+      .set('x-user-email', userEmail)
+      .expect(200);
+
+    const position = positions.body.find(
+      (row: { symbol: string }) => row.symbol === ticker,
+    );
+    expect(position.quantity).toBe(1);
+  });
+
+  it('auto-exits a position when mark price hits stop loss', async () => {
+    await request(app.getHttpServer())
+      .post('/orders')
+      .set('x-user-email', userEmail)
+      .send({
+        symbol: ticker,
+        side: 'BUY',
+        quantity: 2,
+        stopLossPrice: 95,
+        takeProfitPrice: 120,
+      })
+      .expect(201);
+
+    const symbol = await prisma.symbol.findUnique({
+      where: { ticker },
+      select: { id: true },
+    });
+    if (!symbol) {
+      throw new Error('Expected seeded symbol to exist.');
+    }
+
+    await prisma.dailyPrice.create({
+      data: {
+        symbolId: symbol.id,
+        date: new Date('2026-04-26T00:00:00.000Z'),
+        open: new Prisma.Decimal(94),
+        high: new Prisma.Decimal(94),
+        low: new Prisma.Decimal(94),
+        close: new Prisma.Decimal(94),
+        volume: new Prisma.Decimal(1000000),
+        source: 'alpaca',
+      },
+    });
+
+    const positionManagement = app.get(PositionManagementService);
+    const monitorResult = await positionManagement.monitorOpenPositions({
+      force: true,
+    });
+
+    expect(monitorResult.exited).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          symbol: ticker,
+          reason: 'STOP_LOSS',
+          quantity: 2,
+        }),
+      ]),
+    );
+
+    const positions = await request(app.getHttpServer())
+      .get('/portfolio/positions')
+      .set('x-user-email', userEmail)
+      .expect(200);
+
+    const position = positions.body.find(
+      (row: { symbol: string }) => row.symbol === ticker,
+    );
+    expect(position).toBeUndefined();
   });
 
   afterAll(async () => {

@@ -32,6 +32,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { PositionActionButtons } from "@/components/dashboard/position-action-buttons";
 import { TradingViewSymbolChart } from "@/components/dashboard/tradingview-symbol-chart";
 import { resolveOrderStop, resolveOrderTarget, fmtPct, pctGainClass } from "@/lib/order-levels";
 import { formatMarkAsOf, isUsMarketSessionOpen } from "@/lib/market-session";
@@ -134,6 +135,7 @@ function OrdersPageContent({
   const [editStop, setEditStop] = useState("");
   const [editTarget, setEditTarget] = useState("");
   const [isSavingLevels, setIsSavingLevels] = useState(false);
+  const [closingSymbol, setClosingSymbol] = useState<string | null>(null);
 
   useEffect(() => {
     if (!initialSignalId) {
@@ -947,7 +949,7 @@ function OrdersPageContent({
                     <TableHead className="text-right">Target</TableHead>
                     <TableHead className="text-right">To stop</TableHead>
                     <TableHead className="text-right">To target</TableHead>
-                    <TableHead className="pr-4 text-right">Action</TableHead>
+                    <TableHead className="pr-4 text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1000,24 +1002,29 @@ function OrdersPageContent({
                         {fmtPct(position.pctToTarget)}
                       </TableCell>
                       <TableCell className="pr-4 text-right">
-                        {position.linkedOrderId ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() =>
-                              startEditingLevels({
-                                orderId: position.linkedOrderId as string,
-                                symbol: position.symbol,
-                                stop: position.stopLossPrice,
-                                target: position.takeProfitPrice,
-                              })
-                            }
-                          >
-                            Edit levels
-                          </Button>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
+                        <PositionActionButtons
+                          position={position}
+                          busySymbol={closingSymbol}
+                          onBusyChange={setClosingSymbol}
+                          onActionStart={() => {
+                            setError(null);
+                            setMessage(null);
+                          }}
+                          onSuccess={setMessage}
+                          onError={setError}
+                          onRefresh={refreshTradingData}
+                          onEdit={
+                            position.linkedOrderId
+                              ? () =>
+                                  startEditingLevels({
+                                    orderId: position.linkedOrderId as string,
+                                    symbol: position.symbol,
+                                    stop: position.stopLossPrice,
+                                    target: position.takeProfitPrice,
+                                  })
+                              : undefined
+                          }
+                        />
                       </TableCell>
                     </TableRow>
                   ))}

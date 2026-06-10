@@ -12,6 +12,7 @@ import {
 } from "@/lib/api";
 import { formatMarkAsOf, isUsMarketSessionOpen } from "@/lib/market-session";
 import { fmtPct, fmtUsd, pctGainClass } from "@/lib/order-levels";
+import { PositionActionButtons } from "@/components/dashboard/position-action-buttons";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -40,6 +41,8 @@ export default function PortfolioPage(): React.JSX.Element {
   const [history, setHistory] = useState<PortfolioSnapshot[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [actionBusySymbol, setActionBusySymbol] = useState<string | null>(null);
 
   const loadPortfolio = useCallback(async (options?: { silent?: boolean }) => {
     if (!options?.silent) {
@@ -127,6 +130,14 @@ export default function PortfolioPage(): React.JSX.Element {
         <Card>
           <CardContent className="p-4 text-sm text-rose-600 dark:text-rose-400">
             {error}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {!isLoading && message ? (
+        <Card>
+          <CardContent className="p-4 text-sm text-emerald-700 dark:text-emerald-400">
+            {message}
           </CardContent>
         </Card>
       ) : null}
@@ -289,7 +300,9 @@ export default function PortfolioPage(): React.JSX.Element {
                         <TableHead className="text-right">Gain</TableHead>
                         <TableHead className="text-right">Unrealized</TableHead>
                         <TableHead className="text-right">Days held</TableHead>
-                        <TableHead className="pr-4 text-right">Stop</TableHead>
+                        <TableHead className="text-right">Stop</TableHead>
+                        <TableHead className="text-right">Target</TableHead>
+                        <TableHead className="pr-4 text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -337,8 +350,25 @@ export default function PortfolioPage(): React.JSX.Element {
                           <TableCell className="text-right tabular-nums text-muted-foreground">
                             {position.daysHeld ?? "—"}
                           </TableCell>
-                          <TableCell className="pr-4 text-right tabular-nums text-rose-700 dark:text-rose-400">
+                          <TableCell className="text-right tabular-nums text-rose-700 dark:text-rose-400">
                             {fmtUsd(position.stopLossPrice)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-emerald-700 dark:text-emerald-400">
+                            {fmtUsd(position.takeProfitPrice)}
+                          </TableCell>
+                          <TableCell className="pr-4 text-right">
+                            <PositionActionButtons
+                              position={position}
+                              busySymbol={actionBusySymbol}
+                              onBusyChange={setActionBusySymbol}
+                              onActionStart={() => {
+                                setError(null);
+                                setMessage(null);
+                              }}
+                              onSuccess={setMessage}
+                              onError={setError}
+                              onRefresh={() => loadPortfolio({ silent: true })}
+                            />
                           </TableCell>
                         </TableRow>
                       ))}

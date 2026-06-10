@@ -431,6 +431,7 @@ export class PaperTradingRepository {
     status: PaperOrderStatus;
     side: PaperOrderSide;
     symbolId: string;
+    symbol: string;
     stopLossPrice: Prisma.Decimal | null;
     takeProfitPrice: Prisma.Decimal | null;
     fillPrice: Prisma.Decimal | null;
@@ -444,6 +445,7 @@ export class PaperTradingRepository {
         symbolId: true,
         stopLossPrice: true,
         takeProfitPrice: true,
+        symbol: { select: { ticker: true } },
         fill: { select: { price: true } },
       },
     });
@@ -455,6 +457,7 @@ export class PaperTradingRepository {
       status: row.status,
       side: row.side,
       symbolId: row.symbolId,
+      symbol: row.symbol.ticker,
       stopLossPrice: row.stopLossPrice,
       takeProfitPrice: row.takeProfitPrice,
       fillPrice: row.fill?.price ?? null,
@@ -688,6 +691,29 @@ export class PaperTradingRepository {
       realizedPnl: row.realizedPnl,
       openedAt: row.openedAt,
       updatedAt: row.updatedAt,
+    }));
+  }
+
+  async listAccountsWithOpenPositions(): Promise<
+    { accountId: string; userEmail: string }[]
+  > {
+    const rows = await this.prisma.paperAccount.findMany({
+      where: {
+        positions: {
+          some: {
+            quantity: { gt: 0 },
+          },
+        },
+      },
+      select: {
+        id: true,
+        user: { select: { email: true } },
+      },
+    });
+
+    return rows.map((row) => ({
+      accountId: row.id,
+      userEmail: row.user?.email ?? DEFAULT_USER_EMAIL,
     }));
   }
 
