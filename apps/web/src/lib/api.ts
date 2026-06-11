@@ -463,6 +463,50 @@ export function getTradingViewChartSymbol(
   );
 }
 
+export type BrokerPosition = {
+  symbol: string;
+  quantity: number;
+  averageCost: number;
+  marketValue: number;
+  unrealizedPnl: number;
+  currentPrice: number;
+};
+
+export type BrokerAccountSnapshot = {
+  equity: number;
+  cash: number;
+  buyingPower: number;
+  portfolioValue: number;
+  lastEquity: number;
+  dayChange: number;
+  dayChangePercent: number;
+  currency: "USD";
+};
+
+export type BrokerSnapshot = {
+  provider: "alpaca" | "internal";
+  status: "ok" | "disabled" | "error";
+  asOf: string;
+  account: BrokerAccountSnapshot;
+  positions: BrokerPosition[];
+  message?: string;
+};
+
+export type BrokerHealth = {
+  provider: "alpaca" | "internal" | "disabled";
+  status: "ok" | "disabled" | "error";
+  asOf: string;
+  message?: string;
+};
+
+export function getBrokerSnapshot(): Promise<BrokerSnapshot> {
+  return apiGet<BrokerSnapshot>("/broker/snapshot");
+}
+
+export function getBrokerHealth(): Promise<BrokerHealth> {
+  return apiGet<BrokerHealth>("/broker/health");
+}
+
 export function getPortfolio(): Promise<PortfolioView> {
   return apiGet<PortfolioView>("/portfolio");
 }

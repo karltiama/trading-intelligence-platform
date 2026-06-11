@@ -4,12 +4,16 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
+  ApiError,
+  getBrokerSnapshot,
   getPortfolio,
   getPortfolioHistory,
+  type BrokerSnapshot,
   type PortfolioSnapshot,
   type PortfolioSummary,
   type PortfolioPosition,
 } from "@/lib/api";
+import { BrokerBalancePanel } from "@/components/dashboard/broker-balance-panel";
 import { formatMarkAsOf, isUsMarketSessionOpen } from "@/lib/market-session";
 import { fmtPct, fmtUsd, pctGainClass } from "@/lib/order-levels";
 import { PositionActionButtons } from "@/components/dashboard/position-action-buttons";
@@ -39,10 +43,40 @@ export default function PortfolioPage(): React.JSX.Element {
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
   const [positions, setPositions] = useState<PortfolioPosition[]>([]);
   const [history, setHistory] = useState<PortfolioSnapshot[]>([]);
+  const [brokerSnapshot, setBrokerSnapshot] = useState<BrokerSnapshot | null>(
+    null,
+  );
+  const [brokerError, setBrokerError] = useState<string | null>(null);
+  const [brokerDisabled, setBrokerDisabled] = useState(false);
+  const [isBrokerLoading, setIsBrokerLoading] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [actionBusySymbol, setActionBusySymbol] = useState<string | null>(null);
+
+  const loadBrokerSnapshot = useCallback(async () => {
+    setIsBrokerLoading(true);
+    setBrokerError(null);
+    setBrokerDisabled(false);
+    try {
+      const snapshot = await getBrokerSnapshot();
+      setBrokerSnapshot(snapshot);
+    } catch (err: unknown) {
+      if (err instanceof ApiError && err.status === 503) {
+        setBrokerDisabled(true);
+        setBrokerSnapshot(null);
+        return;
+      }
+      setBrokerError(
+        err instanceof Error
+          ? err.message
+          : "Failed to load Alpaca broker snapshot.",
+      );
+      setBrokerSnapshot(null);
+    } finally {
+      setIsBrokerLoading(false);
+    }
+  }, []);
 
   const loadPortfolio = useCallback(async (options?: { silent?: boolean }) => {
     if (!options?.silent) {
@@ -74,8 +108,9 @@ export default function PortfolioPage(): React.JSX.Element {
   }, []);
 
   useEffect(() => {
+    void loadBrokerSnapshot();
     void loadPortfolio();
-  }, [loadPortfolio]);
+  }, [loadBrokerSnapshot, loadPortfolio]);
 
   useEffect(() => {
     if (!isUsMarketSessionOpen()) {
@@ -110,7 +145,7 @@ export default function PortfolioPage(): React.JSX.Element {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Portfolio</h1>
           <p className="text-sm text-muted-foreground">
-            Live paper account equity, open positions, and daily snapshots.
+            Alpaca paper broker balance plus internal simulator ledger.
           </p>
         </div>
         <Button variant="outline" onClick={() => void loadPortfolio()} disabled={isLoading}>
@@ -142,8 +177,18 @@ export default function PortfolioPage(): React.JSX.Element {
         </Card>
       ) : null}
 
+      <BrokerBalancePanel
+        snapshot={brokerSnapshot}
+        isLoading={isBrokerLoading}
+        error={brokerError}
+        disabled={brokerDisabled}
+      />
+
       {!isLoading && !error && summary ? (
         <>
+          <h2 className="text-base font-semibold tracking-tight">
+            Internal simulator
+          </h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Card>
               <CardHeader className="pb-2">

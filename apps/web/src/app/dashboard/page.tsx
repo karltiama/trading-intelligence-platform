@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
+import { BrokerBalancePanel } from "@/components/dashboard/broker-balance-panel";
 import { ChartCard } from "@/components/dashboard/chart-card";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { InsightsPanel } from "@/components/dashboard/insights-panel";
@@ -14,11 +15,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  ApiError,
+  getBrokerSnapshot,
   getMarketSummary,
   getMarketState,
   getPortfolio,
   getPortfolioHistory,
   scanSignals,
+  type BrokerSnapshot,
   type MarketStateResponse,
   type MarketSummaryItem,
   type PortfolioPosition,
@@ -46,6 +50,12 @@ export default function DashboardPage(): React.JSX.Element {
   const [scannerSummary, setScannerSummary] = useState<ScanSignalsSummary | null>(null);
   const [isScannerRunning, setIsScannerRunning] = useState(false);
   const [scannerError, setScannerError] = useState<string | null>(null);
+  const [brokerSnapshot, setBrokerSnapshot] = useState<BrokerSnapshot | null>(
+    null,
+  );
+  const [brokerError, setBrokerError] = useState<string | null>(null);
+  const [brokerDisabled, setBrokerDisabled] = useState(false);
+  const [isBrokerLoading, setIsBrokerLoading] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   /** `null` = default to first tracked symbol from market summary. */
@@ -55,6 +65,34 @@ export default function DashboardPage(): React.JSX.Element {
 
   useEffect(() => {
     let isMounted = true;
+
+    async function loadBrokerSnapshot() {
+      setIsBrokerLoading(true);
+      setBrokerError(null);
+      setBrokerDisabled(false);
+      try {
+        const snapshot = await getBrokerSnapshot();
+        if (!isMounted) return;
+        setBrokerSnapshot(snapshot);
+      } catch (err: unknown) {
+        if (!isMounted) return;
+        if (err instanceof ApiError && err.status === 503) {
+          setBrokerDisabled(true);
+          setBrokerSnapshot(null);
+          return;
+        }
+        setBrokerError(
+          err instanceof Error
+            ? err.message
+            : "Failed to load Alpaca broker snapshot.",
+        );
+        setBrokerSnapshot(null);
+      } finally {
+        if (isMounted) {
+          setIsBrokerLoading(false);
+        }
+      }
+    }
 
     async function loadDashboardData() {
       setIsLoading(true);
@@ -92,6 +130,7 @@ export default function DashboardPage(): React.JSX.Element {
       }
     }
 
+    void loadBrokerSnapshot();
     void loadDashboardData();
 
     return () => {
@@ -215,11 +254,18 @@ export default function DashboardPage(): React.JSX.Element {
           </Card>
         ) : null}
 
+        <BrokerBalancePanel
+          snapshot={brokerSnapshot}
+          isLoading={isBrokerLoading}
+          error={brokerError}
+          disabled={brokerDisabled}
+        />
+
         {!isLoading && !error ? (
           <>
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm text-muted-foreground">
-                Live paper portfolio metrics
+                Internal simulator portfolio metrics
               </p>
               <Button size="sm" variant="outline" asChild>
                 <Link href="/dashboard/portfolio">View Portfolio</Link>

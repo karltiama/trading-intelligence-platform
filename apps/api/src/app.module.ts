@@ -4,6 +4,7 @@ import { AppService } from './app.service';
 import { HealthModule } from './health/health.module';
 import { IndicatorsModule } from './indicators/indicators.module';
 import { AutomationModule } from './modules/automation/automation.module';
+import { BrokerModule } from './modules/broker/broker.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { MarketDataModule } from './modules/market-data/market-data.module';
 import { MarketStateModule } from './modules/market-state/market-state.module';
@@ -21,6 +22,7 @@ import { SignalsModule } from './signals/signals.module';
     PrismaModule,
     HealthModule,
     AutomationModule,
+    BrokerModule,
     MarketDataModule,
     MarketStateModule,
     OrdersModule,

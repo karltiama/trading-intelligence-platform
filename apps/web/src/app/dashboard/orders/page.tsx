@@ -32,6 +32,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import {
+  BROKER_EXECUTION_NOTICE,
+} from "@/components/dashboard/broker-balance-panel";
 import { PositionActionButtons } from "@/components/dashboard/position-action-buttons";
 import { TradingViewSymbolChart } from "@/components/dashboard/tradingview-symbol-chart";
 import { resolveOrderStop, resolveOrderTarget, fmtPct, pctGainClass } from "@/lib/order-levels";
@@ -540,6 +543,12 @@ function OrdersPageContent({
           From signal
         </Button>
       </div>
+
+      <Card className="border-amber-200/60 bg-amber-50/40 dark:border-amber-900/50 dark:bg-amber-950/20">
+        <CardContent className="p-4 text-sm text-amber-900 dark:text-amber-200">
+          {BROKER_EXECUTION_NOTICE}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
