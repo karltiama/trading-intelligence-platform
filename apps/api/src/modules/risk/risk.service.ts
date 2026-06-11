@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PaperOrderSide, Prisma } from '@prisma/client';
+import { MarketDataService } from '../market-data/market-data.service';
 import { PaperTradingRepository } from '../paper-trading/paper-trading.repository';
 
 const MAX_ORDER_QUANTITY = new Prisma.Decimal(1000);
@@ -25,6 +26,7 @@ export type RiskCheckResult =
 export class RiskService {
   constructor(
     private readonly paperTradingRepository: PaperTradingRepository,
+    private readonly marketDataService: MarketDataService,
   ) {}
 
   async evaluateOrder(input: RiskCheckInput): Promise<RiskCheckResult> {
@@ -49,24 +51,18 @@ export class RiskService {
         reason: 'paper account not found for current user',
       };
     }
-    const quote = await this.paperTradingRepository.findSymbolQuote(
+    const mark = await this.marketDataService.resolveSymbolMarkPrice(
       input.symbol,
     );
-    if (!quote) {
+    if (!mark) {
       return { allowed: false, reason: `symbol not tracked: ${input.symbol}` };
-    }
-    if (!quote.latestClose) {
-      return {
-        allowed: false,
-        reason: `no latest market price available: ${input.symbol}`,
-      };
     }
 
     const currentPosition = await this.paperTradingRepository.findPosition(
       account.id,
-      quote.symbolId,
+      mark.symbolId,
     );
-    const notional = quote.latestClose.mul(quantity);
+    const notional = new Prisma.Decimal(mark.close).mul(quantity);
     if (notional.gt(MAX_ORDER_NOTIONAL)) {
       return {
         allowed: false,

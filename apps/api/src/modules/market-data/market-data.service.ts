@@ -23,6 +23,15 @@ import {
 import { MarketDataRepository } from './market-data.repository';
 import { FormattedBar, FormattedQuote } from './dto/market-data-response.dto';
 import { formatTradingViewSymbol } from './tradingview-symbol.util';
+import type { MarkPriceSource } from './mark-price.util';
+
+export type ResolvedSymbolMarkPrice = {
+  symbolId: string;
+  ticker: string;
+  close: number;
+  asOf: Date;
+  source: MarkPriceSource;
+};
 
 @Injectable()
 export class MarketDataService {
@@ -448,6 +457,49 @@ export class MarketDataService {
       message: 'Hourly sync complete',
       symbolsProcessed: coreSymbols.length,
       rowsUpserted,
+    };
+  }
+
+  /**
+   * Best-effort mark for paper fills and risk checks: fresh H1 close when available,
+   * otherwise latest D1 close (same logic as portfolio marks).
+   */
+  async resolveSymbolMarkPrice(
+    symbol: string,
+    options?: { ensureHourly?: boolean },
+  ): Promise<ResolvedSymbolMarkPrice | null> {
+    const ticker = this.normalizeTicker(symbol);
+    const tracked = await this.marketDataRepository.findSymbolByTicker(ticker);
+    if (!tracked) {
+      return null;
+    }
+
+    if (options?.ensureHourly !== false) {
+      try {
+        await this.ensureHourlyBars(ticker);
+      } catch (error) {
+        this.logger.warn(
+          `Hourly ensure skipped for ${ticker} mark resolution: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+
+    const marks = await this.marketDataRepository.findLatestMarkPricesForSymbols(
+      [tracked.id],
+    );
+    const mark = marks[tracked.id];
+    if (!mark) {
+      return null;
+    }
+
+    return {
+      symbolId: tracked.id,
+      ticker: tracked.ticker,
+      close: mark.close.toNumber(),
+      asOf: mark.asOf,
+      source: mark.source,
     };
   }
 }

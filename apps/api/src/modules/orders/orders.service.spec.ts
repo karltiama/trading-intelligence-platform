@@ -16,6 +16,7 @@ describe('OrdersService', () => {
   const marketDataService = {
     getBars: jest.fn(),
     syncDailyBars: jest.fn(),
+    resolveSymbolMarkPrice: jest.fn(),
   } as unknown as MarketDataService;
 
   const marketDataRepository = {
@@ -55,14 +56,16 @@ describe('OrdersService', () => {
     });
     (marketDataService.getBars as jest.Mock).mockResolvedValue([]);
     (marketDataService.syncDailyBars as jest.Mock).mockResolvedValue(1);
+    (marketDataService.resolveSymbolMarkPrice as jest.Mock).mockResolvedValue({
+      symbolId: 'sym-1',
+      ticker: 'AAPL',
+      close: 100,
+      asOf: new Date('2026-04-25T00:00:00.000Z'),
+      source: 'D1',
+    });
     (marketDataRepository.touchSymbolLastSeenAt as jest.Mock).mockResolvedValue(
       undefined,
     );
-    (paperTradingRepository.findSymbolQuote as jest.Mock).mockResolvedValue({
-      symbolId: 'sym-1',
-      ticker: 'AAPL',
-      latestClose: { toNumber: () => 100 },
-    });
     (
       paperTradingRepository.resolveAccountForUser as jest.Mock
     ).mockResolvedValue({

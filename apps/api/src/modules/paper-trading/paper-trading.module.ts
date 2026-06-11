@@ -1,10 +1,11 @@
 import { Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
+import { MarketDataModule } from '../market-data/market-data.module';
 import { PaperTradingRepository } from './paper-trading.repository';
 import { PaperTradingService } from './paper-trading.service';
 
 @Module({
-  imports: [AuditModule],
+  imports: [AuditModule, MarketDataModule],
   providers: [PaperTradingRepository, PaperTradingService],
   exports: [PaperTradingService, PaperTradingRepository],
 })

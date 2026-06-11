@@ -8,11 +8,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 type TradingViewSymbolChartProps = {
   symbol: string;
   height?: number;
+  /** `card` = full Card wrapper (default). `plain` = chart body only for embedding in a parent Card. */
+  variant?: "card" | "plain";
 };
 
 export function TradingViewSymbolChart({
   symbol,
   height = 320,
+  variant = "card",
 }: TradingViewSymbolChartProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const normalizedSymbol = symbol.trim().toUpperCase();
@@ -97,6 +100,35 @@ export function TradingViewSymbolChart({
     };
   }, [tradingViewSymbol]);
 
+  const body = (
+    <>
+      {!normalizedSymbol ? (
+        <p className="text-sm text-muted-foreground">
+          Select a watchlist symbol to load the embedded chart.
+        </p>
+      ) : isResolving ? (
+        <p className="text-sm text-muted-foreground">Resolving chart symbol...</p>
+      ) : resolveError ? (
+        <p className="text-sm text-destructive">{resolveError}</p>
+      ) : (
+        <div
+          className="rounded-md border"
+          style={{ height }}
+          aria-label={`${normalizedSymbol} embedded TradingView chart`}
+        >
+          <div ref={containerRef} className="h-full w-full" />
+        </div>
+      )}
+      {variant === "plain" && tradingViewSymbol ? (
+        <p className="mt-2 text-xs text-muted-foreground">{tradingViewSymbol}</p>
+      ) : null}
+    </>
+  );
+
+  if (variant === "plain") {
+    return body;
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -108,23 +140,7 @@ export function TradingViewSymbolChart({
         ) : null}
       </CardHeader>
       <CardContent>
-        {!normalizedSymbol ? (
-          <p className="text-sm text-muted-foreground">
-            Enter a symbol to load embedded chart context.
-          </p>
-        ) : isResolving ? (
-          <p className="text-sm text-muted-foreground">Resolving chart symbol...</p>
-        ) : resolveError ? (
-          <p className="text-sm text-destructive">{resolveError}</p>
-        ) : (
-          <div
-            className="rounded-md border"
-            style={{ height }}
-            aria-label={`${normalizedSymbol} embedded TradingView chart`}
-          >
-            <div ref={containerRef} className="h-full w-full" />
-          </div>
-        )}
+        {body}
       </CardContent>
     </Card>
   );

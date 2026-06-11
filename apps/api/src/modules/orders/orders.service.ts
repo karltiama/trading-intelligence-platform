@@ -233,10 +233,10 @@ export class OrdersService {
         'takeProfitPrice must be a valid number when provided.',
       );
     }
-    const quote = await this.paperTradingRepository.findSymbolQuote(
+    const mark = await this.marketDataService.resolveSymbolMarkPrice(
       input.symbol,
     );
-    if (!quote || !quote.latestClose) {
+    if (!mark) {
       throw new BadRequestException(
         `No reference price available for risk validation: ${input.symbol}`,
       );
@@ -250,7 +250,7 @@ export class OrdersService {
         'paper account not found for current user.',
       );
     }
-    const entryPrice = quote.latestClose.toNumber();
+    const entryPrice = mark.close;
     const stopLossPrice = input.stopLossPrice as number;
     if (stopLossPrice >= entryPrice) {
       throw new BadRequestException(

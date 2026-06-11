@@ -12,6 +12,7 @@ import {
   UniverseType,
 } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
+import { MarketDataService } from '../market-data/market-data.service';
 import {
   PaperTradingRepository,
   type PaperOrderListFilters,
@@ -83,6 +84,7 @@ export class PaperTradingService {
   constructor(
     private readonly paperTradingRepository: PaperTradingRepository,
     private readonly auditService: AuditService,
+    private readonly marketDataService: MarketDataService,
   ) {}
 
   async placeMarketOrder(
@@ -99,7 +101,8 @@ export class PaperTradingService {
     if (!symbolQuote) {
       throw new NotFoundException(`Tracked symbol not found: ${ticker}`);
     }
-    if (symbolQuote.latestClose === null) {
+    const mark = await this.marketDataService.resolveSymbolMarkPrice(ticker);
+    if (!mark) {
       throw new ConflictException(
         `No latest market price available for ${ticker}`,
       );
@@ -155,7 +158,7 @@ export class PaperTradingService {
         ? null
         : new Prisma.Decimal(input.takeProfitPrice);
 
-    const fillPrice = symbolQuote.latestClose;
+    const fillPrice = new Prisma.Decimal(mark.close);
     const fillNotional = fillPrice.mul(quantity);
     const existingPosition = await this.paperTradingRepository.findPosition(
       account.id,
@@ -286,16 +289,16 @@ export class PaperTradingService {
         'only filled BUY orders support stop/target edits.',
       );
     }
-    const quote = await this.paperTradingRepository.findSymbolQuote(
+    const quote = await this.marketDataService.resolveSymbolMarkPrice(
       existing.symbol,
     );
-    if (!quote?.latestClose) {
+    if (!quote) {
       throw new BadRequestException(
         `No current price available for ${existing.symbol}.`,
       );
     }
 
-    const currentPrice = quote.latestClose.toNumber();
+    const currentPrice = quote.close;
     const stopLossPrice =
       input.stopLossPrice ??
       (existing.stopLossPrice ? existing.stopLossPrice.toNumber() : null);

@@ -25,11 +25,26 @@ describe('PaperTradingService', () => {
     recordEvent: jest.fn(),
   } as unknown as AuditService;
 
-  const service = new PaperTradingService(repository, auditService);
+  const marketDataService = {
+    resolveSymbolMarkPrice: jest.fn(),
+  } as unknown as import('../market-data/market-data.service').MarketDataService;
+
+  const service = new PaperTradingService(
+    repository,
+    auditService,
+    marketDataService,
+  );
 
   beforeEach(() => {
     jest.clearAllMocks();
     (auditService.recordEvent as jest.Mock).mockResolvedValue(undefined);
+    (marketDataService.resolveSymbolMarkPrice as jest.Mock).mockResolvedValue({
+      symbolId: 'sym-1',
+      ticker: 'AAPL',
+      close: 100,
+      asOf: new Date('2026-04-25T00:00:00.000Z'),
+      source: 'D1',
+    });
   });
 
   it('fills a BUY market order immediately and updates cash', async () => {

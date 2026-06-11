@@ -7,7 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { SymbolPriceChart } from "@/components/dashboard/symbol-price-chart";
+import { TradingViewSymbolChart } from "@/components/dashboard/tradingview-symbol-chart";
 
 type ChartCardProps = {
   symbol: string;
@@ -20,22 +20,14 @@ export function ChartCard({ symbol }: ChartCardProps): React.JSX.Element {
     <Card>
       <CardHeader className="border-b">
         <CardTitle className="text-base">
-          {normalized ? `${normalized} · price chart` : "Price chart"}
+          {normalized ? `${normalized} · chart` : "Chart"}
         </CardTitle>
         <CardDescription>
-          7D/30D use hourly bars (
-          <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-            GET /market-data/:symbol/hourly-bars
-          </code>
-          ); 90D/1Y use daily (
-          <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-            GET /market-data/:symbol/bars
-          </code>
-          ). Click a watchlist row to change symbol.
+          TradingView embedded chart. Click a watchlist row to change symbol.
         </CardDescription>
       </CardHeader>
       <CardContent className="pt-6">
-        <SymbolPriceChart symbol={symbol} variant="plain" />
+        <TradingViewSymbolChart symbol={symbol} variant="plain" height={400} />
       </CardContent>
     </Card>
   );
