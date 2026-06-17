@@ -33,6 +33,7 @@ describe('AutomationService', () => {
 
   const riskService = {
     evaluateOrder: jest.fn(),
+    evaluateLongEntryRisk: jest.fn(),
   } as unknown as RiskService;
 
   const auditService = {
@@ -80,6 +81,9 @@ describe('AutomationService', () => {
       automationRepository.markSignalExecutionFailed as jest.Mock
     ).mockResolvedValue(undefined);
     (riskService.evaluateOrder as jest.Mock).mockResolvedValue({
+      allowed: true,
+    });
+    (riskService.evaluateLongEntryRisk as jest.Mock).mockResolvedValue({
       allowed: true,
     });
     (auditService.recordEvent as jest.Mock).mockResolvedValue(undefined);
@@ -244,6 +248,89 @@ describe('AutomationService', () => {
     expect(
       automationRepository.markSignalExecutionRejected,
     ).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a stop-carrying signal that exceeds the per-trade risk budget', async () => {
+    const signals: AutomationSignalInput[] = [
+      {
+        symbolId: 'sym-1',
+        symbol: 'NVDA',
+        side: 'BUY',
+        signalAt: new Date('2026-04-25T12:15:00.000Z'),
+        quantity: 100,
+        stopLossPrice: 90,
+        targetPrice: 130,
+      },
+    ];
+
+    (
+      automationRepository.createSignalExecutionAttempt as jest.Mock
+    ).mockResolvedValue({ id: 'exec-1' });
+    (riskService.evaluateLongEntryRisk as jest.Mock).mockResolvedValue({
+      allowed: false,
+      reason: 'Risk per trade exceeds limit (1.00%).',
+    });
+
+    const result = await service.executeRun({
+      strategy: 'r-risk-test',
+      signals,
+      userEmail: 'automation-spec@local.test',
+    });
+
+    expect(result.placed).toBe(0);
+    expect(result.rejectedRisk).toBe(1);
+    expect(result.failed).toBe(0);
+    expect(riskService.evaluateLongEntryRisk).toHaveBeenCalledWith(
+      expect.objectContaining({
+        symbol: 'NVDA',
+        quantity: 100,
+        stopLossPrice: 90,
+        takeProfitPrice: 130,
+      }),
+    );
+    expect(paperTradingService.placeMarketOrder).not.toHaveBeenCalled();
+    expect(
+      automationRepository.markSignalExecutionRejected,
+    ).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not run the R-based check for stopless signals', async () => {
+    const signals: AutomationSignalInput[] = [
+      {
+        symbolId: 'sym-1',
+        symbol: 'AAPL',
+        side: 'BUY',
+        signalAt: new Date('2026-04-25T12:20:00.000Z'),
+        quantity: 1,
+      },
+    ];
+
+    (
+      automationRepository.createSignalExecutionAttempt as jest.Mock
+    ).mockResolvedValue({ id: 'exec-1' });
+    (paperTradingService.placeMarketOrder as jest.Mock).mockResolvedValue({
+      orderId: 'ord-1',
+      status: 'FILLED',
+      symbol: 'AAPL',
+      side: 'BUY',
+      quantity: 1,
+      fillPrice: 100,
+      fillNotional: 100,
+      cashBalance: 99900,
+      signalId: null,
+      source: TradeSource.AUTOMATION,
+      note: null,
+    });
+
+    const result = await service.executeRun({
+      strategy: 'stopless-strategy',
+      signals,
+      userEmail: 'automation-spec@local.test',
+    });
+
+    expect(result.placed).toBe(1);
+    expect(result.rejectedRisk).toBe(0);
+    expect(riskService.evaluateLongEntryRisk).not.toHaveBeenCalled();
   });
 
   it('rejects executeFromActiveSignals when no active signals exist', async () => {

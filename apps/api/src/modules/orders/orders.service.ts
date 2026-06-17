@@ -2,15 +2,15 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import {
   PaperOrderSide,
   PaperOrderStatus,
+  Prisma,
   TradeSource,
   UniverseType,
 } from '@prisma/client';
 import { MarketDataRepository } from '../market-data/market-data.repository';
 import { MarketDataService } from '../market-data/market-data.service';
-import { PaperTradingRepository } from '../paper-trading/paper-trading.repository';
 import { PaperTradingService } from '../paper-trading/paper-trading.service';
+import { RiskService } from '../risk/risk.service';
 
-const MAX_RISK_PER_TRADE_PERCENT = 0.01;
 const STOP_BUFFER_PERCENT = 0.005;
 const DEFAULT_STOP_LOOKBACK = 20;
 const MAX_SUGGESTED_STOP_DISTANCE_PERCENT = 0.08;
@@ -104,7 +104,7 @@ export class OrdersService {
     private readonly paperTradingService: PaperTradingService,
     private readonly marketDataService: MarketDataService,
     private readonly marketDataRepository: MarketDataRepository,
-    private readonly paperTradingRepository: PaperTradingRepository,
+    private readonly riskService: RiskService,
   ) {}
 
   async placeOrder(
@@ -241,49 +241,52 @@ export class OrdersService {
         `No reference price available for risk validation: ${input.symbol}`,
       );
     }
-    const account = await this.paperTradingRepository.resolveAccountForUser({
+
+    let equity: Prisma.Decimal | null;
+    try {
+      equity = await this.riskService.resolveAccountEquity(
+        userEmail,
+        accountId,
+      );
+    } catch {
+      throw new BadRequestException(
+        'unable to resolve account equity for risk validation.',
+      );
+    }
+    if (equity === null) {
+      throw new BadRequestException('paper account not found for current user.');
+    }
+
+    const risk = this.riskService.evaluateTradeRisk({
+      entryPrice: new Prisma.Decimal(mark.close),
+      stopLossPrice: new Prisma.Decimal(input.stopLossPrice as number),
+      takeProfitPrice:
+        input.takeProfitPrice == null
+          ? null
+          : new Prisma.Decimal(input.takeProfitPrice),
+      quantity: new Prisma.Decimal(input.quantity),
+      equity,
+    });
+    if (!risk.allowed) {
+      throw new BadRequestException(risk.reason);
+    }
+
+    const heat = await this.riskService.evaluatePortfolioHeat({
       userEmail,
       accountId,
+      equity,
+      newTradeRisk: risk.totalRisk,
     });
-    if (!account) {
-      throw new BadRequestException(
-        'paper account not found for current user.',
-      );
+    if (!heat.allowed) {
+      throw new BadRequestException(heat.reason);
     }
-    const entryPrice = mark.close;
-    const stopLossPrice = input.stopLossPrice as number;
-    if (stopLossPrice >= entryPrice) {
-      throw new BadRequestException(
-        `stopLossPrice must be below reference price (${entryPrice.toFixed(2)}).`,
-      );
-    }
-    const riskPerShare = entryPrice - stopLossPrice;
-    const totalRisk = riskPerShare * input.quantity;
-    if (totalRisk <= 0) {
-      throw new BadRequestException('totalRisk must be greater than 0.');
-    }
-    const accountEquity = account.cashBalance.toNumber();
-    if (accountEquity <= 0) {
-      throw new BadRequestException('account equity must be greater than 0.');
-    }
-    const riskPercent = totalRisk / accountEquity;
-    if (riskPercent > MAX_RISK_PER_TRADE_PERCENT) {
-      throw new BadRequestException(
-        `Risk per trade exceeds limit (${(MAX_RISK_PER_TRADE_PERCENT * 100).toFixed(2)}%).`,
-      );
-    }
-    let riskRewardRatio: number | null = null;
-    if (input.takeProfitPrice != null) {
-      const rewardPerShare = input.takeProfitPrice - entryPrice;
-      if (rewardPerShare > 0) {
-        riskRewardRatio = rewardPerShare / riskPerShare;
-      }
-    }
+
     return {
-      riskPerShare,
-      totalRisk,
-      riskPercent,
-      riskRewardRatio,
+      riskPerShare: risk.riskPerShare.toNumber(),
+      totalRisk: risk.totalRisk.toNumber(),
+      riskPercent: risk.riskPercent.toNumber(),
+      riskRewardRatio:
+        risk.riskRewardRatio === null ? null : risk.riskRewardRatio.toNumber(),
     };
   }
 

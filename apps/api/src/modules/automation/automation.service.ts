@@ -10,7 +10,7 @@ import {
   type PlaceMarketOrderResult,
 } from '../paper-trading/paper-trading.service';
 import { PaperTradingRepository } from '../paper-trading/paper-trading.repository';
-import { RiskService } from '../risk/risk.service';
+import { RiskService, type TradeRiskResult } from '../risk/risk.service';
 import { AuditService } from '../audit/audit.service';
 import {
   AutomationRepository,
@@ -204,6 +204,54 @@ export class AutomationService {
           },
         });
         continue;
+      }
+
+      // R-based dollar-risk check, only when the signal carries a stop.
+      // Stopless signals retain the size/notional/cash caps above.
+      if (signal.side === PaperOrderSide.BUY && signal.stopLossPrice != null) {
+        let tradeRisk: TradeRiskResult;
+        try {
+          tradeRisk = await this.riskService.evaluateLongEntryRisk({
+            symbol: signal.symbol,
+            quantity: signal.quantity,
+            stopLossPrice: signal.stopLossPrice,
+            takeProfitPrice: signal.targetPrice,
+            userEmail,
+            accountId: params.accountId,
+          });
+        } catch (error) {
+          failed += 1;
+          await this.automationRepository.markSignalExecutionFailed({
+            executionId: execution.id,
+            reason:
+              error instanceof Error
+                ? `${error.name}: ${error.message}`
+                : String(error),
+          });
+          continue;
+        }
+        if (!tradeRisk.allowed) {
+          rejectedRisk += 1;
+          await this.automationRepository.markSignalExecutionRejected({
+            executionId: execution.id,
+            reason: tradeRisk.reason,
+          });
+          await this.auditService.recordEvent({
+            eventType: 'AUTOMATION_SIGNAL_REJECTED_RISK',
+            userEmail,
+            accountId: params.accountId,
+            resourceId: execution.id,
+            payload: {
+              runId: run.id,
+              strategy,
+              symbol: signal.symbol,
+              side: signal.side,
+              quantity: signal.quantity,
+              reason: tradeRisk.reason,
+            },
+          });
+          continue;
+        }
       }
 
       try {

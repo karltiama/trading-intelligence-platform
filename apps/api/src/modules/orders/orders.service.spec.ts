@@ -1,7 +1,9 @@
+import { Prisma } from '@prisma/client';
 import { MarketDataRepository } from '../market-data/market-data.repository';
 import { MarketDataService } from '../market-data/market-data.service';
 import { PaperTradingRepository } from '../paper-trading/paper-trading.repository';
 import { PaperTradingService } from '../paper-trading/paper-trading.service';
+import { RiskService } from '../risk/risk.service';
 import { OrdersService } from './orders.service';
 
 describe('OrdersService', () => {
@@ -17,24 +19,35 @@ describe('OrdersService', () => {
     getBars: jest.fn(),
     syncDailyBars: jest.fn(),
     resolveSymbolMarkPrice: jest.fn(),
+    ensureHourlyBarsForSymbols: jest.fn(),
   } as unknown as MarketDataService;
 
   const marketDataRepository = {
     findSymbolByTicker: jest.fn(),
     createTrackedSymbol: jest.fn(),
     touchSymbolLastSeenAt: jest.fn(),
+    findLatestMarkPricesForSymbols: jest.fn(),
   } as unknown as MarketDataRepository;
 
   const paperTradingRepository = {
     findSymbolQuote: jest.fn(),
     resolveAccountForUser: jest.fn(),
+    listPositions: jest.fn(),
   } as unknown as PaperTradingRepository;
+
+  // Use a real RiskService (with mocked boundaries) so risk math + the
+  // equity base are exercised end-to-end through the orders path.
+  const riskService = new RiskService(
+    paperTradingRepository,
+    marketDataService,
+    marketDataRepository,
+  );
 
   const service = new OrdersService(
     paperTradingService,
     marketDataService,
     marketDataRepository,
-    paperTradingRepository,
+    riskService,
   );
 
   beforeEach(() => {
@@ -67,10 +80,17 @@ describe('OrdersService', () => {
       undefined,
     );
     (
+      marketDataService.ensureHourlyBarsForSymbols as jest.Mock
+    ).mockResolvedValue(undefined);
+    (
+      marketDataRepository.findLatestMarkPricesForSymbols as jest.Mock
+    ).mockResolvedValue({});
+    (paperTradingRepository.listPositions as jest.Mock).mockResolvedValue([]);
+    (
       paperTradingRepository.resolveAccountForUser as jest.Mock
     ).mockResolvedValue({
       id: 'acct-1',
-      cashBalance: { toNumber: () => 100000 },
+      cashBalance: new Prisma.Decimal(100000),
     });
   });
 
@@ -124,7 +144,7 @@ describe('OrdersService', () => {
       paperTradingRepository.resolveAccountForUser as jest.Mock
     ).mockResolvedValue({
       id: 'acct-1',
-      cashBalance: { toNumber: () => 1000 },
+      cashBalance: new Prisma.Decimal(1000),
     });
     await expect(
       service.placeOrder(
