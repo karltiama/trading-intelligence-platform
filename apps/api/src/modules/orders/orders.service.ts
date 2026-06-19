@@ -6,6 +6,10 @@ import {
   TradeSource,
   UniverseType,
 } from '@prisma/client';
+import {
+  assertBrokerFillPrice,
+  BrokerWriteService,
+} from '../broker/broker-write.service';
 import { MarketDataRepository } from '../market-data/market-data.repository';
 import { MarketDataService } from '../market-data/market-data.service';
 import { PaperTradingService } from '../paper-trading/paper-trading.service';
@@ -105,6 +109,7 @@ export class OrdersService {
     private readonly marketDataService: MarketDataService,
     private readonly marketDataRepository: MarketDataRepository,
     private readonly riskService: RiskService,
+    private readonly brokerWriteService: BrokerWriteService,
   ) {}
 
   async placeOrder(
@@ -125,8 +130,18 @@ export class OrdersService {
       userEmail,
       accountId,
     );
+    const brokerExecution = await this.resolveBrokerExecution(preparedInput);
     const placed = await this.paperTradingService.placeMarketOrder(
-      preparedInput,
+      {
+        ...preparedInput,
+        quantity: brokerExecution?.filledQty ?? preparedInput.quantity,
+        brokerExecution: brokerExecution
+          ? {
+              brokerOrderId: brokerExecution.brokerOrderId,
+              fillPrice: brokerExecution.fillPrice,
+            }
+          : undefined,
+      },
       userEmail,
       accountId,
     );
@@ -295,6 +310,14 @@ export class OrdersService {
     userEmail: string,
     accountId?: string,
   ): Promise<{ userEmail: string; orderId: string; status: 'CANCELED' }> {
+    const brokerOrderId = await this.paperTradingService.resolveBrokerOrderId(
+      orderId,
+      userEmail,
+      accountId,
+    );
+    if (brokerOrderId && this.brokerWriteService.isEnabled()) {
+      await this.brokerWriteService.cancelOrder(brokerOrderId);
+    }
     const canceled = await this.paperTradingService.cancelOrder(
       orderId,
       userEmail,
@@ -376,6 +399,31 @@ export class OrdersService {
       items: page.items.map((row) => ({ userEmail: input.userEmail, ...row })),
       nextCursor: page.nextCursor ? this.encodeCursor(page.nextCursor) : null,
       limit: input.limit,
+    };
+  }
+
+  private async resolveBrokerExecution(input: PlaceOrderInput): Promise<{
+    brokerOrderId: string;
+    fillPrice: number;
+    filledQty: number;
+  } | null> {
+    if (!this.brokerWriteService.isEnabled()) {
+      return null;
+    }
+
+    const submission = await this.brokerWriteService.submitMarketOrder({
+      symbol: input.symbol,
+      side: input.side === 'BUY' ? 'buy' : 'sell',
+      qty: input.quantity,
+    });
+    const fillPrice = assertBrokerFillPrice(submission);
+    const filledQty =
+      submission.filledQty > 0 ? submission.filledQty : input.quantity;
+
+    return {
+      brokerOrderId: submission.brokerOrderId,
+      fillPrice,
+      filledQty,
     };
   }
 

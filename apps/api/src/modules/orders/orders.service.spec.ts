@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { BrokerWriteService } from '../broker/broker-write.service';
 import { MarketDataRepository } from '../market-data/market-data.repository';
 import { MarketDataService } from '../market-data/market-data.service';
 import { PaperTradingRepository } from '../paper-trading/paper-trading.repository';
@@ -13,6 +14,7 @@ describe('OrdersService', () => {
     listOrdersPage: jest.fn(),
     cancelOrder: jest.fn(),
     updateOrderLevels: jest.fn(),
+    resolveBrokerOrderId: jest.fn(),
   } as unknown as PaperTradingService;
 
   const marketDataService = {
@@ -43,15 +45,23 @@ describe('OrdersService', () => {
     marketDataRepository,
   );
 
+  const brokerWriteService = {
+    isEnabled: jest.fn(),
+    submitMarketOrder: jest.fn(),
+    cancelOrder: jest.fn(),
+  } as unknown as BrokerWriteService;
+
   const service = new OrdersService(
     paperTradingService,
     marketDataService,
     marketDataRepository,
     riskService,
+    brokerWriteService,
   );
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (brokerWriteService.isEnabled as jest.Mock).mockReturnValue(false);
     (paperTradingService.placeMarketOrder as jest.Mock).mockResolvedValue({
       orderId: 'ord-1',
       status: 'FILLED',
@@ -233,5 +243,70 @@ describe('OrdersService', () => {
       'orders-test@local.test',
       undefined,
     );
+  });
+
+  it('routes market orders to Alpaca when broker write is enabled', async () => {
+    (brokerWriteService.isEnabled as jest.Mock).mockReturnValue(true);
+    (brokerWriteService.submitMarketOrder as jest.Mock).mockResolvedValue({
+      brokerOrderId: 'alpaca-ord-1',
+      status: 'filled',
+      filledQty: 2,
+      filledAvgPrice: 101.25,
+    });
+    (marketDataRepository.findSymbolByTicker as jest.Mock).mockResolvedValue({
+      id: 'sym-1',
+      isActive: true,
+    });
+    (marketDataService.getBars as jest.Mock).mockResolvedValue([
+      { close: 100 },
+    ]);
+
+    await service.placeOrder(
+      {
+        symbol: 'AAPL',
+        side: 'BUY',
+        quantity: 2,
+        source: 'MANUAL',
+        stopLossPrice: 95,
+      },
+      'orders-test@local.test',
+    );
+
+    expect(brokerWriteService.submitMarketOrder).toHaveBeenCalledWith({
+      symbol: 'AAPL',
+      side: 'buy',
+      qty: 2,
+    });
+    expect(paperTradingService.placeMarketOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        symbol: 'AAPL',
+        quantity: 2,
+        brokerExecution: {
+          brokerOrderId: 'alpaca-ord-1',
+          fillPrice: 101.25,
+        },
+      }),
+      'orders-test@local.test',
+      undefined,
+    );
+  });
+
+  it('cancels linked Alpaca orders before canceling locally', async () => {
+    (brokerWriteService.isEnabled as jest.Mock).mockReturnValue(true);
+    (paperTradingService.resolveBrokerOrderId as jest.Mock).mockResolvedValue(
+      'alpaca-ord-1',
+    );
+    (paperTradingService.cancelOrder as jest.Mock).mockResolvedValue({
+      orderId: 'ord-1',
+      status: 'CANCELED',
+    });
+
+    const result = await service.cancelOrder(
+      'ord-1',
+      'orders-test@local.test',
+    );
+
+    expect(brokerWriteService.cancelOrder).toHaveBeenCalledWith('alpaca-ord-1');
+    expect(result.status).toBe('CANCELED');
   });
 });

@@ -257,6 +257,7 @@ model PaperOrder {
   quantity    Decimal          @db.Decimal(18, 8)
   stopLossPrice Decimal?       @db.Decimal(18, 8)
   takeProfitPrice Decimal?     @db.Decimal(18, 8)
+  brokerOrderId String?
   requestedAt DateTime         @default(now())
   filledAt    DateTime?
   canceledAt  DateTime?
@@ -273,6 +274,7 @@ model PaperOrder {
   @@index([status, requestedAt])
   @@index([signalId])
   @@index([source])
+  @@index([brokerOrderId])
 }
 
 model PaperFill {

@@ -43,6 +43,7 @@ export type PaperPositionState = {
 export type PaperOrderState = {
   id: string;
   status: PaperOrderStatus;
+  brokerOrderId: string | null;
 };
 
 export type OrderTradeRationale = {
@@ -331,6 +332,7 @@ export class PaperTradingRepository {
     note?: string | null;
     stopLossPrice?: Prisma.Decimal | null;
     takeProfitPrice?: Prisma.Decimal | null;
+    brokerOrderId?: string | null;
     side: PaperOrderSide;
     quantity: Prisma.Decimal;
     price: Prisma.Decimal;
@@ -347,6 +349,7 @@ export class PaperTradingRepository {
           note: params.note ?? null,
           stopLossPrice: params.stopLossPrice ?? null,
           takeProfitPrice: params.takeProfitPrice ?? null,
+          brokerOrderId: params.brokerOrderId ?? null,
           side: params.side,
           type: 'MARKET',
           status: 'FILLED',
@@ -419,7 +422,7 @@ export class PaperTradingRepository {
   ): Promise<PaperOrderState | null> {
     return this.prisma.paperOrder.findUnique({
       where: { id: orderId, accountId },
-      select: { id: true, status: true },
+      select: { id: true, status: true, brokerOrderId: true },
     });
   }
 

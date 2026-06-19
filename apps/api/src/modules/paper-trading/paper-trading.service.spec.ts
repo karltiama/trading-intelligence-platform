@@ -179,6 +179,7 @@ describe('PaperTradingService', () => {
     (repository.findOrderForAccount as jest.Mock).mockResolvedValue({
       id: 'ord-1',
       status: 'FILLED',
+      brokerOrderId: null,
     });
 
     await expect(

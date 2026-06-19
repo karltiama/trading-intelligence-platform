@@ -29,6 +29,10 @@ export type PlaceMarketOrderInput = {
   /** Required when source is SIGNAL; optional for AUTOMATION scanner-linked orders. */
   signalId?: string;
   note?: string | null;
+  brokerExecution?: {
+    brokerOrderId: string;
+    fillPrice: number;
+  };
 };
 
 export type PlaceMarketOrderResult = {
@@ -102,7 +106,7 @@ export class PaperTradingService {
       throw new NotFoundException(`Tracked symbol not found: ${ticker}`);
     }
     const mark = await this.marketDataService.resolveSymbolMarkPrice(ticker);
-    if (!mark) {
+    if (!mark && !input.brokerExecution) {
       throw new ConflictException(
         `No latest market price available for ${ticker}`,
       );
@@ -158,8 +162,11 @@ export class PaperTradingService {
         ? null
         : new Prisma.Decimal(input.takeProfitPrice);
 
-    const fillPrice = new Prisma.Decimal(mark.close);
+    const fillPrice = input.brokerExecution
+      ? new Prisma.Decimal(input.brokerExecution.fillPrice)
+      : new Prisma.Decimal(mark!.close);
     const fillNotional = fillPrice.mul(quantity);
+    const brokerOrderId = input.brokerExecution?.brokerOrderId ?? null;
     const existingPosition = await this.paperTradingRepository.findPosition(
       account.id,
       symbolQuote.symbolId,
@@ -180,6 +187,7 @@ export class PaperTradingService {
         fillNotional,
         cashBalance: account.cashBalance,
         existingPosition,
+        brokerOrderId,
       });
       await this.recordOrderPlacedAudit({
         userEmail,
@@ -203,6 +211,7 @@ export class PaperTradingService {
       fillNotional,
       cashBalance: account.cashBalance,
       existingPosition,
+      brokerOrderId,
     });
     await this.recordOrderPlacedAudit({
       userEmail,
@@ -210,6 +219,19 @@ export class PaperTradingService {
       order: placed,
     });
     return placed;
+  }
+
+  async resolveBrokerOrderId(
+    orderId: string,
+    userEmail: string,
+    accountId?: string,
+  ): Promise<string | null> {
+    const account = await this.resolveScopedAccount(userEmail, accountId);
+    const existing = await this.paperTradingRepository.findOrderForAccount(
+      account.id,
+      orderId,
+    );
+    return existing?.brokerOrderId ?? null;
   }
 
   async cancelOrder(
@@ -446,8 +468,12 @@ export class PaperTradingService {
     fillNotional: Prisma.Decimal;
     cashBalance: Prisma.Decimal;
     existingPosition: PaperPositionState | null;
+    brokerOrderId: string | null;
   }): Promise<PlaceMarketOrderResult> {
-    if (params.cashBalance.lessThan(params.fillNotional)) {
+    if (
+      params.brokerOrderId === null &&
+      params.cashBalance.lessThan(params.fillNotional)
+    ) {
       throw new ConflictException(
         'Insufficient cash balance for BUY market order.',
       );
@@ -475,6 +501,7 @@ export class PaperTradingService {
       note: params.note,
       stopLossPrice: params.stopLossPrice,
       takeProfitPrice: params.takeProfitPrice,
+      brokerOrderId: params.brokerOrderId,
       side: 'BUY',
       quantity: params.quantity,
       price: params.fillPrice,
@@ -527,10 +554,12 @@ export class PaperTradingService {
     fillNotional: Prisma.Decimal;
     cashBalance: Prisma.Decimal;
     existingPosition: PaperPositionState | null;
+    brokerOrderId: string | null;
   }): Promise<PlaceMarketOrderResult> {
     if (
-      params.existingPosition === null ||
-      params.existingPosition.quantity.lessThan(params.quantity)
+      params.brokerOrderId === null &&
+      (params.existingPosition === null ||
+        params.existingPosition.quantity.lessThan(params.quantity))
     ) {
       throw new ConflictException(
         'Short selling is disabled for this paper account.',
@@ -538,16 +567,21 @@ export class PaperTradingService {
     }
 
     const nextCashBalance = params.cashBalance.add(params.fillNotional);
-    const remainingQuantity = params.existingPosition.quantity.sub(
-      params.quantity,
-    );
-    const realizedDelta = params.fillPrice
-      .sub(params.existingPosition.averageCost)
-      .mul(params.quantity);
+    const remainingQuantity =
+      params.existingPosition === null
+        ? new Prisma.Decimal(0)
+        : params.existingPosition.quantity.sub(params.quantity);
+    const realizedDelta =
+      params.existingPosition === null
+        ? new Prisma.Decimal(0)
+        : params.fillPrice
+            .sub(params.existingPosition.averageCost)
+            .mul(params.quantity);
 
-    const nextAverageCost = remainingQuantity.equals(0)
-      ? new Prisma.Decimal(0)
-      : params.existingPosition.averageCost;
+    const nextAverageCost =
+      remainingQuantity.equals(0) || params.existingPosition === null
+        ? new Prisma.Decimal(0)
+        : params.existingPosition.averageCost;
 
     const created = await this.paperTradingRepository.createFilledOrder({
       accountId: params.accountId,
@@ -557,6 +591,7 @@ export class PaperTradingService {
       note: params.note,
       stopLossPrice: params.stopLossPrice,
       takeProfitPrice: params.takeProfitPrice,
+      brokerOrderId: params.brokerOrderId,
       side: 'SELL',
       quantity: params.quantity,
       price: params.fillPrice,
@@ -571,7 +606,10 @@ export class PaperTradingService {
       symbolId: params.symbolId,
       quantity: remainingQuantity,
       averageCost: nextAverageCost,
-      realizedPnl: params.existingPosition.realizedPnl.add(realizedDelta),
+      realizedPnl:
+        params.existingPosition === null
+          ? new Prisma.Decimal(0)
+          : params.existingPosition.realizedPnl.add(realizedDelta),
     });
 
     return {

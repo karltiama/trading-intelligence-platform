@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AccountContextModule } from '../account-context/account-context.module';
+import { BrokerModule } from '../broker/broker.module';
 import { MarketDataModule } from '../market-data/market-data.module';
 import { PaperTradingModule } from '../paper-trading/paper-trading.module';
 import { RiskModule } from '../risk/risk.module';
@@ -12,6 +13,7 @@ import { OrdersService } from './orders.service';
     AccountContextModule,
     MarketDataModule,
     RiskModule,
+    BrokerModule,
   ],
   controllers: [OrdersController],
   providers: [OrdersService],
